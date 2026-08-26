@@ -445,6 +445,81 @@
 (function () {
   var API = 'https://wtunzezigncwjpcqsfzk.supabase.co/functions/v1/bi-ranking-vendas';
 
+  // --- Música da tela de parabéns (configurada no CRM) ---------------------
+  // O admin sobe um MP3/MP4 em: CRM → menu Ranking → 🎵 Música dos parabéns.
+  // O CRM guarda o arquivo no bucket público `ranking-musica` e o ponteiro em
+  // bi_config.parabens_musica; a edge fn devolve isso como `d.musica`
+  // ({url, nome, segundos, cortado}) tanto no payload quanto no ?comando=1.
+  // Sem música configurada (null), tudo segue como antes: samba/pagode
+  // sintetizados em WebAudio.
+  //
+  // SEMPRE tocamos num elemento <audio>, mesmo quando a URL é .mp4: o <audio>
+  // ignora a trilha de vídeo do container, que é exatamente o que se quer aqui
+  // (é a tela de parabéns que aparece, não o vídeo). E o teto de 20s vale
+  // sempre, inclusive para arquivo inteiro que não pôde ser cortado no CRM.
+  var MUSICA = null;              // {url, nome, segundos, cortado} vindo da API
+  var MUSICA_SEG_PADRAO = 20;
+  var _celebraMediaEl = null, _activateBtn = null, _musicaTimer = null, _musicaFade = null;
+  function showActivateButton(onActivate) {
+    try {
+      if (_activateBtn) return;
+      var b = document.createElement('button');
+      b.id = 'celebraActivate'; b.textContent = 'Clique para ativar áudio';
+      b.style.position = 'fixed'; b.style.zIndex = 9999; b.style.left = '50%'; b.style.top = '8%';
+      b.style.transform = 'translateX(-50%)'; b.style.padding = '0.8rem 1.2rem';
+      b.style.borderRadius = '8px'; b.style.border = 'none'; b.style.background = 'linear-gradient(90deg,#dd4222,#621244)';
+      b.style.color = '#fff'; b.style.fontWeight = '700'; b.style.cursor = 'pointer'; b.style.boxShadow = '0 6px 18px rgba(0,0,0,0.4)';
+      b.onclick = function () { try { onActivate && onActivate(); } catch (e) {} };
+      document.body.appendChild(b); _activateBtn = b;
+    } catch (e) {}
+  }
+  function hideActivateButton() { try { if (_activateBtn) { _activateBtn.remove(); _activateBtn = null; } } catch (e) {} }
+
+  // Toca a música configurada no CRM. SÍNCRONA de propósito: devolve true/false
+  // na hora, para o chamador decidir na mesma linha se cai no som sintetizado.
+  // (A versão anterior era `async`, então o `if (!played)` do fallback nunca
+  // disparava — Promise pendente é sempre truthy — e a TV ficava muda quando o
+  // arquivo não existia.)
+  function tocarMusica() {
+    try {
+      if (!MUSICA || !MUSICA.url) return false;
+      var segundos = Number(MUSICA.segundos) || MUSICA_SEG_PADRAO;
+      pararMusica();
+      var el = document.createElement('audio');   // <audio> mesmo quando a URL é .mp4:
+      el.id = 'celebraAudio';                     // ignora a trilha de vídeo do container
+      el.src = MUSICA.url; el.preload = 'auto'; el.loop = false; el.volume = 1;
+      document.body.appendChild(el); _celebraMediaEl = el;
+
+      var p = el.play();
+      if (p && typeof p.then === 'function') {
+        p.catch(function () {
+          // autoplay bloqueado nesta TV: um clique libera e vale para as próximas
+          showActivateButton(function () { try { el.play(); hideActivateButton(); } catch (e) {} });
+        });
+      }
+      // teto de reprodução — vale inclusive para o arquivo inteiro (cortado=false)
+      _musicaTimer = setTimeout(function () { fadeEPara(el, 0.8); }, Math.max(1, segundos) * 1000);
+      return true;
+    } catch (e) { return false; }
+  }
+  // corte seco em música soa como falha de som na TV; sai com fade curto
+  function fadeEPara(el, seg) {
+    try {
+      var passos = 16, i = 0, v0 = el.volume;
+      _musicaFade = setInterval(function () {
+        i++;
+        try { el.volume = Math.max(0, v0 * (1 - i / passos)); } catch (e) {}
+        if (i >= passos) pararMusica();
+      }, (seg * 1000) / passos);
+    } catch (e) { pararMusica(); }
+  }
+  function pararMusica() {
+    try { if (_musicaTimer) { clearTimeout(_musicaTimer); _musicaTimer = null; } } catch (e) {}
+    try { if (_musicaFade) { clearInterval(_musicaFade); _musicaFade = null; } } catch (e) {}
+    try { if (_celebraMediaEl) { _celebraMediaEl.pause(); _celebraMediaEl.remove(); _celebraMediaEl = null; } } catch (e) {}
+    hideActivateButton();
+  }
+
   // ---- Fotos dos vendedores ----------------------------------------------------
   // Coloque os arquivos na pasta fotos/ do repo e mapeie aqui. A chave pode ser o
   // PRIMEIRO NOME (ex.: 'anne') ou o NOME COMPLETO (ex.: 'anne karoline'), tudo em
@@ -518,6 +593,7 @@
   function render(d) {
     loaded = true;
     ultimo = d;
+    MUSICA = d.musica || null;   // música dos parabéns (bi_config, definida no CRM)
     var t = d.totais;
 
     // ao vivo (hoje) x historico (dia passado)
@@ -860,7 +936,18 @@
       + arq + tag + valorHTML + clienteHTML + chips + qualsHTML
       + '<div class="fecho">' + esc(fecho) + ', ' + esc(primeiro) + '! 👏</div>'
       + '</div>';
-    if (!info.desfile) { var _prm = titleCase(info.nome).split(' ')[0]; setTimeout(function () { try { if (info.metaBatida) tocarPagode(); else tocarSamba(); falarParabens(_prm); } catch (e) {} }, 0); } // som async: NUNCA trava a tela. meta=pagode; venda=samba; +voz
+    if (!info.desfile) {
+      var _prm = titleCase(info.nome).split(' ')[0];
+      setTimeout(function () {
+        try {
+          // música do CRM quando houver; senão, o som sintetizado de sempre
+          if (!tocarMusica()) {
+            if (info.metaBatida) tocarPagode(); else tocarSamba();
+          }
+          falarParabens(_prm);
+        } catch (e) {}
+      }, 0);
+    } // som async: NUNCA trava a tela. meta=pagode; venda=samba; +voz
     el.classList.add('show');
     el.setAttribute('aria-hidden', 'false');
   }
@@ -868,6 +955,7 @@
     var el = document.getElementById('celebra');
     el.classList.remove('show');
     el.setAttribute('aria-hidden', 'true');
+    try { pararMusica(); } catch (e) {}
     setTimeout(function () { if (!el.classList.contains('show')) el.innerHTML = ''; }, 700);
   }
 
@@ -913,6 +1001,7 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d) return;
+        MUSICA = d.musica || null;   // troca de música no CRM vale em ~6s, sem recarregar a TV
         var did = d.desfile || null;
         var pb = d.parabens || null, pid = pb ? pb.id : null;
         var mb = d.metabatida || null, mid = mb ? mb.id : null;
