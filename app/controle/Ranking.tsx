@@ -11,8 +11,9 @@ import { Tvs } from "./Tvs";
 import { Musica } from "./Musica";
 import { PorDia } from "./PorDia";
 import { Filiais } from "./Filiais";
+import { Criterios } from "./Criterios";
 
-type Aba = "ao-vivo" | "por-dia" | "foto" | "filiais" | "metas" | "tvs" | "musica";
+type Aba = "ao-vivo" | "por-dia" | "foto" | "filiais" | "criterios" | "metas" | "tvs" | "musica";
 
 // ---------------------------------------------------------------------------
 // A TELA DO RANKING. Mesmo esqueleto do admin novo: barra fina de marca, título
@@ -34,6 +35,7 @@ export function Ranking({ admin, tema: temaInicial }: { admin: boolean; tema: Te
     ...(admin
       ? ([
           { k: "filiais", rotulo: "Filiais" },
+          { k: "criterios", rotulo: "Critérios" },
           { k: "metas", rotulo: "Metas" },
           { k: "tvs", rotulo: "TVs" },
           { k: "musica", rotulo: "Música" },
@@ -107,6 +109,9 @@ export function Ranking({ admin, tema: temaInicial }: { admin: boolean; tema: Te
             </div>
             <div id="secao-filiais" role="tabpanel" aria-labelledby="aba-filiais" hidden={aba !== "filiais"} className="mt-4">
               <Filiais ativa={aba === "filiais"} />
+            </div>
+            <div id="secao-criterios" role="tabpanel" aria-labelledby="aba-criterios" hidden={aba !== "criterios"} className="mt-4">
+              <Criterios ativa={aba === "criterios"} />
             </div>
             <div id="secao-metas" role="tabpanel" aria-labelledby="aba-metas" hidden={aba !== "metas"} className="mt-4">
               <Metas ativa={aba === "metas"} />
