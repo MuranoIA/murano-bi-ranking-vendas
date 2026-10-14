@@ -1,0 +1,297 @@
+/* ---------------------------------------------------------------------------
+   Estilos do /chat-v2. Ficam SÓ aqui: importados pelo layout desta rota.
+
+   ⚠️ Sem o preflight do Tailwind. O preflight reseta margem, tipografia e
+   botões no documento inteiro, e o resto do CRM é estilo inline construído em
+   cima do padrão do navegador — resetar quebraria as telas antigas.
+   Por isso importamos `theme` e `utilities` à mão, nunca `tailwindcss` inteiro.
+
+   ⚠️ E os tokens são PREFIXADOS (`--color-v2-*`). Em navegação no cliente, a
+   folha desta rota continua no documento depois que a pessoa sai do /chat-v2:
+   um `--color-primary` solto no `:root` passaria a valer em /, /chat e /admin.
+   Com prefixo, o que vaza é inerte.
+--------------------------------------------------------------------------- */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+@theme {
+  /* --- marca: o vinho é a moldura, nunca a ação ------------------------- */
+  --color-v2-vinho: #621244;
+  --color-v2-vinho-forte: #4d0e35;
+  --color-v2-vinho-claro: #f5edf4;
+  --color-v2-vinho-texto: #8a2a63; /* vinho legível sobre branco: 8,10:1 */
+
+  /* --- azul: AÇÃO. É a assinatura do desenvolvedor, e aqui ela tem regra:
+         tudo que o vendedor faz acontecer é azul. Ticks, links, foco,
+         conversa selecionada, bolha enviada, progresso.
+         #1a5fa8 sobre branco = 6,47:1 (serve de fundo com texto branco).
+         #2f7fd4 = 4,11:1 (NÃO serve de fundo; só contorno de foco, 3:1). */
+  --color-v2-azul: #1a5fa8;
+  --color-v2-azul-forte: #134b86;
+  --color-v2-azul-claro: #eaf2fb;
+  --color-v2-azul-foco: #2f7fd4;
+
+  /* --- laranja: acento pontual. Um por região, e só para o que precisa de
+         resposta: não lida, fora da janela, falha. */
+  --color-v2-laranja: #dd4222;
+  --color-v2-laranja-claro: #fdeee9;
+
+  /* --- superfícies e texto --------------------------------------------- */
+  --color-v2-fundo: #f4f1f4;
+  --color-v2-superficie: #ffffff;
+  --color-v2-superficie-2: #faf7fa;
+  --color-v2-tinta: #1c0e1b;
+  --color-v2-tinta-fraca: #6b6577; /* 5,60:1 sobre branco — passa como texto */
+  --color-v2-linha: #e7dfe6;
+  --color-v2-linha-forte: #cfc5cf; /* borda de controle: 3:1 */
+
+  --color-v2-ok: #1d6b45;
+  --color-v2-ok-claro: #e6f3ec;
+  --color-v2-erro: #b3261e;
+  --color-v2-erro-claro: #fdecea;
+
+  /* --- elevação Material, sombra tingida pelo escuro da marca ----------- */
+  --shadow-e1: 0 1px 2px rgb(28 14 27 / 0.10), 0 1px 3px 1px rgb(28 14 27 / 0.06);
+  --shadow-e2: 0 1px 2px rgb(28 14 27 / 0.12), 0 2px 6px 2px rgb(28 14 27 / 0.08);
+  --shadow-e3: 0 4px 8px 3px rgb(28 14 27 / 0.08), 0 1px 3px rgb(28 14 27 / 0.14);
+
+  --ease-padrao: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enfatico: cubic-bezier(0.05, 0.7, 0.1, 1);
+}
+
+/* ===========================================================================
+   OS TEMAS (28/09/2026, pedido do dono) — só os CLAROS, e só no /chat-v2.
+   São os do Café Code, com os valores copiados de lá.
+
+   ⚠️ NENHUM COMPONENTE MUDA. Um tema aqui é só redefinir as fichas do bloco
+   acima debaixo de `.v2[data-tema=…]`; as utilidades do Tailwind leem
+   `var(--color-v2-…)` e a subárvore inteira troca de cor. É a prova de que a
+   paleta estava mesmo em fichas.
+
+   A régua de SIGNIFICADO não muda com o tema, só o valor:
+     · `vinho`   = marca e moldura (a barra do topo);
+     · `azul`    = AÇÃO — e é por isso que no Atlântico ela vira latão: ação
+       azul dentro de uma interface azul desaparece;
+     · `laranja` = acento pontual, o que pede resposta.
+   =========================================================================== */
+
+.v2[data-tema="atlantico"] {
+  --color-v2-vinho: #1a5fa8;
+  --color-v2-vinho-forte: #0f3b6b;
+  --color-v2-vinho-claro: #e4edf8;
+  --color-v2-vinho-texto: #0f3b6b;
+
+  /* latão: a ação, 5,13:1 sobre branco */
+  --color-v2-azul: #a35c12;
+  --color-v2-azul-forte: #7d460d;
+  --color-v2-azul-claro: #f7eee2;
+  --color-v2-azul-foco: #c87f2a;
+
+  --color-v2-laranja: #b42318;
+  --color-v2-laranja-claro: #fbe7e4;
+
+  --color-v2-fundo: #edf1f7;
+  --color-v2-superficie: #ffffff;
+  --color-v2-superficie-2: #f6f9fc;
+  --color-v2-tinta: #101b2d;
+  --color-v2-tinta-fraca: #4e5c70;
+  --color-v2-linha: #d5dee9;
+  --color-v2-linha-forte: #7c8b9e;
+
+  --color-v2-ok: #12684a;
+  --color-v2-ok-claro: #ddf0e8;
+  --color-v2-erro: #b42318;
+  --color-v2-erro-claro: #fbe7e4;
+
+  /* sombra tingida do escuro do tema — cinza ao lado de azul lê como sujo */
+  --shadow-e1: 0 1px 2px rgb(16 27 45 / 0.08), 0 1px 3px 1px rgb(16 27 45 / 0.05);
+  --shadow-e2: 0 1px 2px rgb(16 27 45 / 0.1), 0 2px 6px 2px rgb(16 27 45 / 0.06);
+  --shadow-e3: 0 4px 10px 3px rgb(16 27 45 / 0.08), 0 1px 3px rgb(16 27 45 / 0.12);
+}
+
+.v2[data-tema="cafe"] {
+  --color-v2-vinho: #5b3a29;
+  --color-v2-vinho-forte: #3b2418;
+  --color-v2-vinho-claro: #f1e2d2;
+  --color-v2-vinho-texto: #5b3a29;
+
+  /* cold brew: o azul assinatura, um tom mais fundo */
+  --color-v2-azul: #1f5c94;
+  --color-v2-azul-forte: #164672;
+  --color-v2-azul-claro: #e6eef6;
+  --color-v2-azul-foco: #3b82c4;
+
+  --color-v2-laranja: #a4541f;
+  --color-v2-laranja-claro: #f7e8db;
+
+  --color-v2-fundo: #efe3d3;
+  --color-v2-superficie: #fffaf4;
+  --color-v2-superficie-2: #f8efe4;
+  --color-v2-tinta: #2a1a12;
+  --color-v2-tinta-fraca: #6a5243;
+  --color-v2-linha: #e5d5c2;
+  --color-v2-linha-forte: #9a7e66;
+
+  --color-v2-ok: #3f6b2f;
+  --color-v2-ok-claro: #e5eedb;
+  --color-v2-erro: #a52a21;
+  --color-v2-erro-claro: #f9e3de;
+
+  /* sombra tingida de café, nunca cinza */
+  --shadow-e1: 0 1px 2px rgb(42 26 18 / 0.1), 0 1px 3px 1px rgb(42 26 18 / 0.06);
+  --shadow-e2: 0 1px 2px rgb(42 26 18 / 0.12), 0 4px 10px 1px rgb(42 26 18 / 0.08);
+  --shadow-e3: 0 6px 16px 2px rgb(42 26 18 / 0.12), 0 1px 3px rgb(42 26 18 / 0.16);
+}
+
+/* --- base mínima, SÓ dentro de .v2 ---------------------------------------
+   É o que o preflight faria, reduzido ao necessário e preso ao escopo. */
+@layer base {
+  .v2 {
+    color: var(--color-v2-tinta);
+    background: var(--color-v2-fundo);
+    -webkit-tap-highlight-color: transparent;
+    font-feature-settings: "cv11", "ss01";
+  }
+  .v2 *,
+  .v2 *::before,
+  .v2 *::after {
+    box-sizing: border-box;
+  }
+  .v2 button {
+    font: inherit;
+    color: inherit;
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+  .v2 input,
+  .v2 textarea {
+    font: inherit;
+    color: inherit;
+  }
+  /* ⚠️ SEM SUBLINHADO (28/09/2026, pedido do dono). Esta folha entra SEM
+     preflight (ver o topo do arquivo), então todo <a> ficava com o sublinhado
+     padrão do navegador — e a barra do produto virava uma fileira de links
+     sublinhados. Quem QUER o sublinhado (o link dentro de uma mensagem, o
+     "Abrir em nova aba" da foto) o pede por classe, e continua valendo. */
+  /* ⚠️ só a decoração. `color` NÃO entra aqui: `.v2 a` tem especificidade
+     maior que uma classe do Tailwind (elemento + classe contra classe), então
+     um `color` neste bloco venceria todo `text-v2-azul` da tela. */
+  .v2 a {
+    text-decoration: none;
+  }
+  .v2 p,
+  .v2 h1,
+  .v2 h2,
+  .v2 h3 {
+    margin: 0;
+  }
+  /* o iOS dá zoom em campo com fonte < 16px. Vale para os dois campos da tela. */
+  .v2 input,
+  .v2 textarea {
+    font-size: 16px;
+  }
+}
+
+/* --- ripple Material: o <Ripple/> injeta o span em qualquer [data-ripple] -- */
+.v2 [data-ripple] {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.v2 .ripple-onda {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.14;
+  transform: scale(0);
+  pointer-events: none;
+  z-index: 0;
+  animation: v2-ripple 520ms var(--ease-padrao) forwards;
+}
+@keyframes v2-ripple {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* bolha nova: entra de baixo, curto. Movimento que explica o que aconteceu. */
+@keyframes v2-entrar {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.v2 .entrar {
+  animation: v2-entrar 200ms var(--ease-enfatico) both;
+}
+
+/* foco visível: azul de CONTORNO (3:1). Nunca o azul de fundo. */
+.v2 :focus-visible {
+  outline: 2px solid var(--color-v2-azul-foco);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Ação por mensagem (encaminhar): discreta onde há mouse, SEMPRE visível onde
+   só há dedo. Esconder no toque tiraria o gesto de quem vai usar o app no
+   celular — é a lição do §60.7, e o motivo de esta ser a única regra de
+   `:hover` da tela (estilo inline não faz hover). */
+.v2 .acao-msg {
+  opacity: 0;
+  transition: opacity 120ms var(--ease-padrao);
+}
+.v2 [data-msg]:hover .acao-msg,
+.v2 .acao-msg:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .v2 .acao-msg {
+    opacity: 1;
+  }
+}
+
+/* rolagem fina, discreta, nas três colunas */
+.v2 .rolagem {
+  scrollbar-width: thin;
+  scrollbar-color: #d6cdd6 transparent;
+  overscroll-behavior: contain;
+}
+.v2 .rolagem::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.v2 .rolagem::-webkit-scrollbar-thumb {
+  background: #d6cdd6;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+}
+.v2 .rolagem::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* esqueleto: pulso discreto, sem brilho correndo (que chama mais atenção que
+   o conteúdo que está chegando) */
+@keyframes v2-pulso {
+  50% {
+    opacity: 0.45;
+  }
+}
+.v2 .esqueleto {
+  background: #e9e2e9;
+  border-radius: 8px;
+  animation: v2-pulso 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v2 *,
+  .v2 *::before,
+  .v2 *::after {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
+}
