@@ -8,6 +8,7 @@ import { SeletorFiliais } from "./SeletorFiliais";
 type Linha = { nome: string; bruto: number; devolucoes: number; liquido: number; pedidos: number; clientes: number };
 type Resposta = {
   dia: string; aoVivo: boolean; semDados?: boolean; geradoEm?: string; filiais: number[];
+  criterio?: { texto: string; rotulo: string | null; modo: "padrao" | "personalizado" } | null;
   totais: { bruto: number; devolucoes: number; liquido: number; pedidos: number; clientes: number };
   ranking: Linha[];
 };
@@ -71,7 +72,7 @@ export function PorDia({ ativa }: { ativa: boolean }) {
       <section className={CARTAO}>
         <h2 className="text-[18px] font-bold">Ranking de um dia</h2>
         <p className="mt-1 text-[13.5px] leading-5 text-v2-tinta-fraca">
-          Escolha qualquer data. Vale a mesma conta do VendasPro: vendas e vendas de manifesto emitidas no dia, sem canceladas, menos as devoluções lançadas nesse dia.
+          Escolha qualquer data. Vale o critério da aba “Critérios” (o mesmo das TVs); abaixo do resultado aparece qual foi usado.
         </p>
         <div className="mt-4 flex flex-wrap items-end gap-3">
           <div>
@@ -147,6 +148,13 @@ export function PorDia({ ativa }: { ativa: boolean }) {
                   </tbody>
                 </table>
               </div>
+            )}
+            {dados.criterio && (
+              <p className="mt-3 rounded-lg bg-v2-vinho-claro px-3 py-2 text-[12.5px] leading-5">
+                <strong>Critério usado:</strong>{" "}
+                {dados.criterio.modo === "padrao" ? "Padrão (VendasPro)" : (dados.criterio.rotulo ?? "Personalizado")}
+                <span className="block text-v2-tinta-fraca">{dados.criterio.texto.replace(/^[^:]*: /, "")}</span>
+              </p>
             )}
             <p className="mt-3 text-[12px] text-v2-tinta-fraca">
               {dados.aoVivo ? "Hoje, ao vivo. " : ""}Calculado agora a partir do ERP; um dia passado pode mudar se uma nota for cancelada depois.
