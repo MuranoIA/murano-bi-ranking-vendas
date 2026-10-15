@@ -1,4 +1,5 @@
-import { lerSessao, podeAdmin } from "@/lib/sessao";
+import { lerSessao, podeVerDia } from "@/lib/sessao";
+import { recortar } from "@/lib/escopo";
 import { diaValido, lerFiliais } from "@/lib/rankingFiliais";
 import { lerCriterio } from "@/lib/criterio";
 
@@ -10,13 +11,15 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   const sessao = lerSessao();
   if (!sessao) return Response.json({ error: "não autenticado" }, { status: 401 });
-  if (!podeAdmin(sessao)) return Response.json({ error: "apenas admin" }, { status: 403 });
+  if (!podeVerDia(sessao)) return Response.json({ error: "apenas supervisor" }, { status: 403 });
 
   const u = new URL(req.url);
   const dia = u.searchParams.get("dia");
   if (!diaValido(dia)) return Response.json({ error: "Data inválida." }, { status: 400 });
-  const filiais = lerFiliais(u.searchParams.get("filiais"));
-  if (!filiais) return Response.json({ error: "Marque ao menos uma filial." }, { status: 400 });
+  const pedidas = lerFiliais(u.searchParams.get("filiais"));
+  if (!pedidas) return Response.json({ error: "Marque ao menos uma filial." }, { status: 400 });
+  const filiais = recortar(pedidas, sessao.filiais);
+  if (!filiais.length) return Response.json({ error: "Você só vê a sua filial." }, { status: 403 });
 
   const critParam = u.searchParams.get("criterio");
   const criterio = critParam ? lerCriterio(critParam) : null;

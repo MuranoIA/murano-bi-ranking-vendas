@@ -23,18 +23,20 @@ type Aba = "ao-vivo" | "por-dia" | "foto" | "filiais" | "criterios" | "metas" | 
 // servidor confere de novo em cada rota. A foto é de todos os consultores: a
 // rota deduz DE QUEM é a foto da sessão, nunca do cliente.
 // ---------------------------------------------------------------------------
-export function Ranking({ admin, tema: temaInicial }: { admin: boolean; tema: TemaChat }) {
+// `porDia`: admin ou supervisor de filial. `filiais`: o recorte de quem entrou (null = as duas),
+// configurado no admin do hub (lib/escopo.ts) — a tela só mostra, quem recorta é o servidor.
+export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: boolean; porDia: boolean; filiais: number[] | null; tema: TemaChat }) {
   const [tema, setTema] = useState<TemaChat>(temaInicial);
   // a aba mora no `#`: recarregar ou mandar o link abre na mesma seção. Lida só
   // depois de montar — o servidor não vê o `#`.
   const [aba, setAba] = useState<Aba>("ao-vivo");
   const ABAS: { k: Aba; rotulo: string }[] = [
     { k: "ao-vivo", rotulo: "Ao vivo" },
-    ...(admin ? ([{ k: "por-dia", rotulo: "Por dia" }] as { k: Aba; rotulo: string }[]) : []),
+    ...(porDia ? ([{ k: "por-dia", rotulo: "Por dia" }] as { k: Aba; rotulo: string }[]) : []),
     { k: "foto", rotulo: "Minha foto" },
+    ...(porDia ? ([{ k: "filiais", rotulo: "Filiais" }] as { k: Aba; rotulo: string }[]) : []),
     ...(admin
       ? ([
-          { k: "filiais", rotulo: "Filiais" },
           { k: "criterios", rotulo: "Critérios" },
           { k: "metas", rotulo: "Metas" },
           { k: "tvs", rotulo: "TVs" },
@@ -97,12 +99,12 @@ export function Ranking({ admin, tema: temaInicial }: { admin: boolean; tema: Te
         {/* As seções ficam montadas e a aba só esconde: um envio de música em
             andamento roda NESTA página, e desmontar a seção o perderia. */}
         <div id="secao-ao-vivo" role="tabpanel" aria-labelledby="aba-ao-vivo" hidden={aba !== "ao-vivo"} className="mt-4">
-          <AoVivo admin={admin} />
+          <AoVivo porDia={porDia} filiais={filiais} />
         </div>
         <div id="secao-foto" role="tabpanel" aria-labelledby="aba-foto" hidden={aba !== "foto"} className="mt-4">
           <Foto admin={admin} />
         </div>
-        {admin && (
+        {porDia && (
           <>
             <div id="secao-por-dia" role="tabpanel" aria-labelledby="aba-por-dia" hidden={aba !== "por-dia"} className="mt-4">
               <PorDia ativa={aba === "por-dia"} />
@@ -110,6 +112,10 @@ export function Ranking({ admin, tema: temaInicial }: { admin: boolean; tema: Te
             <div id="secao-filiais" role="tabpanel" aria-labelledby="aba-filiais" hidden={aba !== "filiais"} className="mt-4">
               <Filiais ativa={aba === "filiais"} />
             </div>
+          </>
+        )}
+        {admin && (
+          <>
             <div id="secao-criterios" role="tabpanel" aria-labelledby="aba-criterios" hidden={aba !== "criterios"} className="mt-4">
               <Criterios ativa={aba === "criterios"} />
             </div>
