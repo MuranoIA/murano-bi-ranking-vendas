@@ -438,7 +438,7 @@
       <span>Atualizado às <span id="atualizadoEm">—</span></span>
     </div>
     <div class="criterio">
-      Vendas emitidas hoje (menos devoluções) · somente operação de Belém · atualização automática a cada 60s
+      Vendas emitidas hoje (menos devoluções) · somente operação de <span id="nomeFilial">Belém</span> · atualização automática a cada 60s
     </div>
     <div class="etiqueta-criterio" id="etiquetaCriterio" hidden></div>
   </footer>
@@ -604,6 +604,8 @@
   }
 
   function render(d) {
+    var nf = document.getElementById('nomeFilial');
+    if (nf && d && d.grupo) nf.textContent = d.grupo === 'maranhao' ? 'Maranhão' : 'Belém';
     loaded = true;
     ultimo = d;
     MUSICA = d.musica || null;   // música dos parabéns (bi_config, definida no CRM)
