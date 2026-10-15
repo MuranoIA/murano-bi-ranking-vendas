@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BOTAO_CONTORNO, BOTAO_PRIMARIO, CARTAO, avisoDe } from "../../componentes/estilo";
 import { comGrupo, type Grupo } from "@/lib/grupo";
+import { slugCompleto } from "@/lib/slug";
 
 type Sess = { slug: string | null; url: string | null };
 
@@ -26,9 +27,13 @@ export function Foto({ grupo = null }: { grupo?: Grupo | null }) {
   useEffect(() => {
     setAlvo("");
     if (!admin) return;
-    fetch(comGrupo("/api/ranking/metas-individuais", grupo), { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { metas: [] }))
-      .then((j) => setRoster((j.metas ?? []).map((m: any) => ({ slug: m.slug, nome: m.nome }))))
+    // a mesma lista da aba Consultores: nome completo do ERP e RCA, de quem vendeu na filial
+    fetch(comGrupo("/api/ranking/consultores", grupo), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { consultores: [] }))
+      .then((j) => setRoster((j.consultores ?? []).map((c: any) => ({
+        slug: slugCompleto(c.nome),
+        nome: c.nome + (c.rca != null ? ` · RCA ${c.rca}` : "") + (c.aparece === false ? " (escondido no ranking)" : ""),
+      }))))
       .catch(() => setRoster([]));
   }, [admin, grupo]);
 

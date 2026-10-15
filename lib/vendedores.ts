@@ -1,5 +1,8 @@
 import { sb } from "./config";
 import { filiaisDoGrupo, type Grupo } from "./grupo";
+import { slugCompleto, slugDe } from "./slug";
+
+export { normalizar, slugDe, slugCompleto } from "./slug";
 
 // Quem é vendedor de cada filial: quem lançou venda (padrão ou manifesto) nela nos últimos
 // DIAS dias, no faturamento do v2 — a mesma tabela que o ranking usa. Não há cadastro de
@@ -10,9 +13,6 @@ const VALIDADE_MS = 10 * 60 * 1000;
 export type VendedorErp = { nome: string; rca: number | null; pedidos: number; ultima: string };
 const cache = new Map<Grupo, { em: number; lista: VendedorErp[] }>();
 
-export const normalizar = (s: unknown) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
-/** O slug do ranking é o 1º nome (bi_fotos_ranking, bi_meta_vendedor e a edge function usam o mesmo). */
-export const slugDe = (nome: unknown) => normalizar(nome).split(" ")[0] || "";
 /** A chave do vendedor na edge function do ranking: o nome do ERP aparado e em maiúsculas. */
 export const chaveNome = (n: unknown) => String(n ?? "").trim().toUpperCase();
 
@@ -70,5 +70,5 @@ export async function consultoresCadastrados(g: Grupo): Promise<string[]> {
 /** Slugs dos vendedores da filial: quem vendeu nela e quem foi cadastrado como consultor dela. */
 export async function slugsDoGrupo(g: Grupo): Promise<Set<string>> {
   const [erp, cad] = await Promise.all([vendedoresDoGrupo(g), consultoresCadastrados(g)]);
-  return new Set([...erp, ...cad].map(slugDe).filter(Boolean));
+  return new Set([...[...erp, ...cad].map(slugDe), ...erp.map(slugCompleto)].filter(Boolean));
 }
