@@ -706,7 +706,7 @@
   var filaFesta = [];         // comemorações pendentes
   var festejando = false;
   var desfilando = false;     // true durante o desfile único (?desfile=1)
-  var ultimoDesfileId = null, ultimoParabensId = null, ultimoMetaId = null, comandoIniciado = false; // comandos remotos (poll do CRM)
+  var ultimoDesfileId = null, ultimoPararId = null, ultimoParabensId = null, ultimoMetaId = null, comandoIniciado = false; // comandos remotos (poll do CRM)
   var CORES_CONF = ['#dd4222', '#ffb59e', '#621244', '#e4d4d3', '#ffd0a0', '#7b2d8b'];
   var FRASES_FESTA = ['Excelente trabalho', 'Que venda', 'Foco e atitude', 'Segue voando', 'Time Murano com tudo', 'Isso é talento', 'Mais uma no placar'];
 
@@ -981,15 +981,21 @@
   // ---- Desfile único (?desfile=1): toca a tela de parabéns de CADA venda de hoje,
   // 10s cada, em sequência cronológica; ao fim, volta ao ranking ao vivo. -----------
   var DESFILE_MS = 3000;
+  // `desfileVez` muda a cada desfile e a cada "Pausar nas TVs": um passo ou uma busca de um desfile
+  // interrompido ve que a vez mudou e nao segue (sem isso o setTimeout pendente voltaria a tela).
+  var desfileVez = 0, desfileTimer = null;
   function rodarDesfile() {
     desfilando = true;
+    var vez = ++desfileVez;
     fetch(comFiliais(API + '?vendas=1'), { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (d) {
+        if (vez !== desfileVez) return;
         var vendas = (d && d.vendas) || [];
         if (!vendas.length) { finalizarDesfile(); return; }
         var i = 0, n = vendas.length;
         (function passo() {
+          if (vez !== desfileVez) return;
           if (i >= n) { finalizarDesfile(); return; }
           var vd = vendas[i];
           mostrarFesta({
@@ -999,10 +1005,17 @@
             desfile: true, idx: i + 1, n: n
           });
           i++;
-          setTimeout(passo, DESFILE_MS);
+          desfileTimer = setTimeout(passo, DESFILE_MS);
         })();
       })
-      .catch(function () { finalizarDesfile(); });
+      .catch(function () { if (vez === desfileVez) finalizarDesfile(); });
+  }
+  // "Pausar nas TVs": interrompe o desfile em andamento e volta ao ranking ao vivo
+  function pararDesfile() {
+    if (!desfilando) return;
+    desfileVez++;
+    if (desfileTimer) { clearTimeout(desfileTimer); desfileTimer = null; }
+    finalizarDesfile();
   }
   function finalizarDesfile() {
     esconderFesta();
@@ -1021,14 +1034,16 @@
       .then(function (d) {
         if (!d) return;
         MUSICA = d.musica || null;   // troca de música no CRM vale em ~6s, sem recarregar a TV
-        var did = d.desfile || null;
+        var did = d.desfile || null, sid = d.desfileParar || null;
         var pb = d.parabens || null, pid = pb ? pb.id : null;
         var mb = d.metabatida || null, mid = mb ? mb.id : null;
-        if (!comandoIniciado) { comandoIniciado = true; ultimoDesfileId = did; ultimoParabensId = pid; ultimoMetaId = mid; return; } // baseline
-        if (did && did !== ultimoDesfileId) {
-          ultimoDesfileId = did;
-          if (!desfilando) rodarDesfile();
-        }
+        if (!comandoIniciado) { comandoIniciado = true; ultimoDesfileId = did; ultimoPararId = sid; ultimoParabensId = pid; ultimoMetaId = mid; return; } // baseline
+        // pausar vem antes: se os dois mudaram no mesmo poll, vale o mais recente (ids sao Date.now())
+        var novoDesfile = did && did !== ultimoDesfileId, novoParar = sid && sid !== ultimoPararId;
+        if (novoDesfile) ultimoDesfileId = did;
+        if (novoParar) ultimoPararId = sid;
+        if (novoParar && (!novoDesfile || Number(sid) >= Number(did))) pararDesfile();
+        else if (novoDesfile && !desfilando) rodarDesfile();
         if (pid && pid !== ultimoParabensId) { // parabéns de uma venda específica (por cliente)
           ultimoParabensId = pid;
           var vd = pb.venda;

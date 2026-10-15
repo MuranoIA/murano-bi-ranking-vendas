@@ -30,7 +30,7 @@ async function slugDoVendedor(): Promise<string | null> {
   return (data?.carteira as string) ?? null;
 }
 
-const SLUG_OK = /^[a-z0-9-]{1,40}$/;
+const SLUG_OK = /^[a-z0-9-]{1,80}$/;
 
 // Pode mexer na foto de `slug`? A própria sempre; a de outro, admin ou supervisor da filial do consultor.
 async function podeMexerEm(sessao: Sessao, slug: string, grupoPedido: string | null): Promise<Response | null> {
