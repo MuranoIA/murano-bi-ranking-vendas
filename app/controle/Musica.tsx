@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { prepararTrecho, segundosFmt, SEGUNDOS_PARABENS } from "@/lib/musicaParabens";
 import { BOTAO_PRIMARIO, CAMPO, CARTAO, ROTULO, avisoDe } from "../../componentes/estilo";
+import { comGrupo, rotuloDoGrupo, type Grupo } from "@/lib/grupo";
 
 type Aviso = { ok: boolean; texto: string } | null;
 type MusicaAtual = {
@@ -29,9 +30,11 @@ function inicioEmSegundos(txt: string) {
 // sobe — direto para o Storage por URL assinada, porque passar por /api devolvia
 // 413 acima de ~4,5 MB. O ponteiro só muda no fim: se o envio falhar, a música
 // atual continua.
-export function Musica({ ativa }: { ativa: boolean }) {
+// Cada filial tem a sua música (bi_config.parabens_musica:<grupo>); sem ela, toca a música padrão.
+export function Musica({ ativa, grupo }: { ativa: boolean; grupo: Grupo }) {
   const [jaAbriu, setJaAbriu] = useState(false);
   const [musica, setMusica] = useState<MusicaAtual | null>(null);
+  const [propria, setPropria] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState<"" | "preparando" | "enviando">("");
   const [aviso, setAviso] = useState<Aviso>(null);
@@ -41,12 +44,13 @@ export function Musica({ ativa }: { ativa: boolean }) {
   useEffect(() => { if (ativa) setJaAbriu(true); }, [ativa]);
   useEffect(() => {
     if (!jaAbriu) return;
-    fetch("/api/ranking/musica")
+    setCarregando(true);
+    fetch(comGrupo("/api/ranking/musica", grupo))
       .then((r) => r.json())
-      .then((j) => setMusica(j?.musica ?? null))
+      .then((j) => { setMusica(j?.musica ?? null); setPropria(j?.propria === true); })
       .catch(() => setMusica(null))
       .finally(() => setCarregando(false));
-  }, [jaAbriu]);
+  }, [jaAbriu, grupo]);
 
   async function enviar(file: File) {
     if (file.size > MAX_ORIGEM) {
@@ -71,7 +75,7 @@ export function Musica({ ativa }: { ativa: boolean }) {
       const mime = trecho ? "audio/wav" : file.type || "";
 
       setEnviando("enviando");
-      const rAss = await fetch("/api/ranking/musica", {
+      const rAss = await fetch(comGrupo("/api/ranking/musica", grupo), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ acao: "assinar", mime }),
@@ -86,7 +90,7 @@ export function Musica({ ativa }: { ativa: boolean }) {
       });
       if (!rPut.ok) throw new Error(`Falha ao enviar o arquivo (${rPut.status}). Tente de novo.`);
 
-      const rConf = await fetch("/api/ranking/musica", {
+      const rConf = await fetch(comGrupo("/api/ranking/musica", grupo), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ acao: "confirmar", path: jAss.path, nome: file.name, cortado: !!trecho, origem: file.type || "" }),
@@ -94,6 +98,7 @@ export function Musica({ ativa }: { ativa: boolean }) {
       const j = await rConf.json().catch(() => ({}));
       if (!rConf.ok) throw new Error(j?.error ?? `Erro ${rConf.status}`);
       setMusica(j.musica);
+      setPropria(true);
       setAviso({
         ok: true,
         texto: trecho
@@ -109,15 +114,16 @@ export function Musica({ ativa }: { ativa: boolean }) {
   }
 
   async function remover() {
-    if (!confirm("Voltar ao som padrão (samba sintetizado) na tela de parabéns?")) return;
+    if (!confirm(`Voltar à música padrão nas TVs de ${rotuloDoGrupo(grupo)}?`)) return;
     setEnviando("enviando");
     setAviso(null);
     try {
-      const r = await fetch("/api/ranking/musica", { method: "DELETE" });
+      const r = await fetch(comGrupo("/api/ranking/musica", grupo), { method: "DELETE" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error ?? `Erro ${r.status}`);
-      setMusica(null);
-      setAviso({ ok: true, texto: "Som padrão restaurado." });
+      setMusica(j.musica ?? null);
+      setPropria(false);
+      setAviso({ ok: true, texto: "Música padrão restaurada." });
     } catch (e: any) {
       setAviso({ ok: false, texto: "Falha: " + (e?.message ?? e) });
     } finally {
@@ -129,7 +135,7 @@ export function Musica({ ativa }: { ativa: boolean }) {
     <section className={CARTAO}>
       <h2 className="text-[18px] font-bold">Música dos parabéns</h2>
       <p className="mt-1 max-w-2xl text-[13.5px] leading-5 text-v2-tinta-fraca">
-        Toca nas TVs quando entra uma venda nova. Envie um <b>MP3</b> ou um <b>MP4</b> — de vídeo só aproveitamos o
+        Toca nas TVs de <b>{rotuloDoGrupo(grupo)}</b> quando entra uma venda nova. Envie um <b>MP3</b> ou um <b>MP4</b> — de vídeo só aproveitamos o
         áudio. Tocam <b>{SEGUNDOS_PARABENS} segundos</b>, com fade no fim.
       </p>
 
@@ -137,7 +143,7 @@ export function Musica({ ativa }: { ativa: boolean }) {
         <p className="mt-4 text-[13px] text-v2-tinta-fraca">Carregando…</p>
       ) : musica ? (
         <div className="mt-4 rounded-xl p-3 ring-1 ring-v2-linha">
-          <div className="text-[11.5px] font-bold uppercase tracking-[0.08em] text-v2-tinta-fraca">Tocando hoje</div>
+          <div className="text-[11.5px] font-bold uppercase tracking-[0.08em] text-v2-tinta-fraca">{propria ? "Tocando hoje · escolhida para esta filial" : "Tocando hoje · música padrão"}</div>
           <div className="mt-1 break-words text-[14px] font-bold">{musica.nome}</div>
           <audio controls preload="none" src={musica.url} className="mt-2 w-full" />
           <div className="mt-2 text-[12px] text-v2-tinta-fraca">
@@ -181,15 +187,15 @@ export function Musica({ ativa }: { ativa: boolean }) {
         <button onClick={() => inputRef.current?.click()} disabled={!!enviando} data-ripple className={BOTAO_PRIMARIO}>
           Escolher MP3 ou MP4
         </button>
-        {musica && (
+        {propria && (
           <button
             onClick={remover}
             disabled={!!enviando}
             data-ripple
-            title="Apaga a música e volta ao som sintetizado"
+            title="Apaga a música desta filial e volta à música padrão"
             className="flex h-10 items-center rounded-lg px-4 text-[13.5px] font-semibold text-v2-erro ring-1 ring-inset ring-v2-erro/35 hover:bg-v2-erro-claro disabled:opacity-50"
           >
-            Voltar ao som padrão
+            Voltar à música padrão
           </button>
         )}
       </div>

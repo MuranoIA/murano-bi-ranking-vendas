@@ -1,12 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
-import { lerSessao, podeAdmin } from "@/lib/sessao";
+import { lerSessao, podeConfigurar, type Sessao } from "@/lib/sessao";
+import { escolherGrupo } from "@/lib/grupo";
+import { slugsDoGrupo } from "@/lib/vendedores";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
 
 // Upload da foto do vendedor para o ranking. O slug (de QUEM é a foto) vem da
-// sessão no servidor, então um vendedor só altera a PRÓPRIA foto. Única exceção: o
-// admin pode apontar o slug de qualquer consultor (`slug` no form / na query).
+// sessão no servidor, então um vendedor só altera a PRÓPRIA foto. Exceção: o admin
+// e o supervisor apontam outro consultor (`slug` no form / na query) — o supervisor só
+// os vendedores da filial dele (lib/vendedores.ts). DELETE tira a foto.
 // Grava no bucket ranking-fotos + tabela bi_fotos_ranking (a edge fn do ranking lê dali).
 const BUCKET = "ranking-fotos";
 const MIMES = ["image/jpeg", "image/png", "image/webp"];
@@ -29,13 +32,29 @@ async function slugDoVendedor(): Promise<string | null> {
 
 const SLUG_OK = /^[a-z0-9-]{1,40}$/;
 
+// Pode mexer na foto de `slug`? A própria sempre; a de outro, admin ou supervisor da filial do consultor.
+async function podeMexerEm(sessao: Sessao, slug: string, grupoPedido: string | null): Promise<Response | null> {
+  if (!SLUG_OK.test(slug)) return Response.json({ error: "consultor inválido" }, { status: 400 });
+  if (slug === (await slugDoVendedor())) return null;
+  if (!podeConfigurar(sessao)) return Response.json({ error: "Só o administrador ou o supervisor troca a foto de outro consultor." }, { status: 403 });
+  if (!sessao.filiais) return null; // admin sem recorte: qualquer consultor
+  const grupo = escolherGrupo(grupoPedido, sessao.filiais);
+  try {
+    if (grupo && (await slugsDoGrupo(grupo)).has(slug)) return null;
+  } catch (e: any) {
+    return Response.json({ error: "Não foi possível conferir os vendedores da filial: " + (e?.message ?? e) }, { status: 502 });
+  }
+  return Response.json({ error: "Esse consultor não é da sua filial." }, { status: 403 });
+}
+
 export async function GET(req: Request) {
   const sessao = lerSessao();
   if (!sessao) return Response.json({ error: "não autenticado" }, { status: 401 });
-  const pedido = new URL(req.url).searchParams.get("slug");
+  const u = new URL(req.url);
+  const pedido = u.searchParams.get("slug");
   if (pedido) {
-    if (!podeAdmin(sessao)) return Response.json({ error: "apenas admin" }, { status: 403 });
-    if (!SLUG_OK.test(pedido)) return Response.json({ error: "consultor inválido" }, { status: 400 });
+    const nao = await podeMexerEm(sessao, pedido, u.searchParams.get("grupo"));
+    if (nao) return nao;
   }
   const slug = pedido || (await slugDoVendedor());
   if (!slug) return Response.json({ slug: null, url: null });
@@ -50,8 +69,8 @@ export async function POST(req: Request) {
   const alvo = form?.get("slug");
   let slug: string | null;
   if (typeof alvo === "string" && alvo) {
-    if (!podeAdmin(sessao)) return Response.json({ error: "apenas admin pode trocar a foto de outro consultor" }, { status: 403 });
-    if (!SLUG_OK.test(alvo)) return Response.json({ error: "consultor inválido" }, { status: 400 });
+    const nao = await podeMexerEm(sessao, alvo, new URL(req.url).searchParams.get("grupo"));
+    if (nao) return nao;
     slug = alvo;
   } else {
     slug = await slugDoVendedor();
@@ -79,4 +98,31 @@ export async function POST(req: Request) {
   if (dbErr) return Response.json({ error: "Falha ao salvar: " + dbErr.message }, { status: 500 });
 
   return Response.json({ ok: true, slug, url });
+}
+
+// Tira a foto do consultor (o ranking volta a mostrar as iniciais). Mesma regra do POST.
+export async function DELETE(req: Request) {
+  const sessao = lerSessao();
+  if (!sessao) return Response.json({ error: "não autenticado" }, { status: 401 });
+  const u = new URL(req.url);
+  const pedido = u.searchParams.get("slug");
+  let slug: string | null;
+  if (pedido) {
+    const nao = await podeMexerEm(sessao, pedido, u.searchParams.get("grupo"));
+    if (nao) return nao;
+    slug = pedido;
+  } else {
+    slug = await slugDoVendedor();
+  }
+  if (!slug) return Response.json({ error: "Nenhum consultor escolhido." }, { status: 400 });
+
+  const client = sb();
+  const { data: atual } = await client.from("bi_fotos_ranking").select("url").eq("slug", slug).maybeSingle();
+  const { error } = await client.from("bi_fotos_ranking").delete().eq("slug", slug);
+  if (error) return Response.json({ error: "Falha ao tirar a foto: " + error.message }, { status: 500 });
+  // apaga o arquivo do bucket (best-effort: um órfão lá não aparece em lugar nenhum)
+  const marca = `/${BUCKET}/`;
+  const i = atual?.url ? atual.url.indexOf(marca) : -1;
+  if (i >= 0) { try { await client.storage.from(BUCKET).remove([atual!.url.slice(i + marca.length)]); } catch { /* órfão */ } }
+  return Response.json({ ok: true, slug });
 }

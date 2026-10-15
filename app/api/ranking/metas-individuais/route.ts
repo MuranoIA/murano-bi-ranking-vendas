@@ -1,55 +1,49 @@
-import { createClient } from "@supabase/supabase-js";
-import { lerSessao, podeAdmin } from "@/lib/sessao";
+import { quemConfigura, sb } from "@/lib/config";
+import { consultoresCadastrados, slugDe, slugsDoGrupo, vendedoresDoGrupo } from "@/lib/vendedores";
 
 export const dynamic = "force-dynamic";
 
-// Metas individuais do dia por vendedor (bi_meta_vendedor, slug=1º nome). Só admin.
-// GET: roster (vendedores de hoje + com foto + com meta) e a meta atual de cada.
-// POST { metas:[{slug,nome,meta}] }: grava. Escrita SÓ no murano-conversas.
-function sb() {
-  const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Supabase envs ausentes");
-  return createClient(url, key, { auth: { persistSession: false } });
-}
-const norm = (s: any) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
-const slugDe = (nome: any) => (norm(nome).split(" ")[0] || "");
+// Metas individuais por vendedor (bi_meta_vendedor, slug = 1º nome), da filial (lib/grupo.ts).
+// GET: os vendedores da filial (quem vendeu nela nos últimos dias e os consultores cadastrados nela,
+//      lib/vendedores.ts) e a meta de cada.
+//      É também a lista de consultores da aba "Minha foto".
+// POST { metas:[{slug,nome,meta}] }: grava só vendedores da filial. Admin ou supervisor.
 const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const primeiroNome = (nome: any) => cap((String(nome ?? "").trim().split(/\s+/)[0] || "").toLowerCase());
 
-export async function GET() {
-  const sessao = lerSessao();
-  if (!sessao) return Response.json({ error: "não autenticado" }, { status: 401 });
-  if (!podeAdmin(sessao)) return Response.json({ error: "apenas admin" }, { status: 403 });
-
-  const c = sb();
-  const [{ data: metas }, { data: fotos }, { data: peds }] = await Promise.all([
-    c.from("bi_meta_vendedor").select("slug,nome,meta"),
-    c.from("bi_fotos_ranking").select("slug"),
-    c.from("bi_pedidos_dia").select("vendedor"),
-  ]);
+export async function GET(req: Request) {
+  const q = quemConfigura(req);
+  if (q instanceof Response) return q;
+  let nomes: string[];
+  try { nomes = [...(await vendedoresDoGrupo(q.grupo)), ...(await consultoresCadastrados(q.grupo))]; }
+  catch (e: any) { return Response.json({ error: "Não foi possível ler os vendedores da filial: " + (e?.message ?? e) }, { status: 502 }); }
 
   const roster = new Map<string, { slug: string; nome: string; meta: number }>();
-  for (const p of (peds ?? [])) { const s = slugDe(p.vendedor); if (s && !roster.has(s)) roster.set(s, { slug: s, nome: primeiroNome(p.vendedor), meta: 0 }); }
-  for (const f of (fotos ?? [])) { const s = f.slug; if (s && !roster.has(s)) roster.set(s, { slug: s, nome: cap(s), meta: 0 }); }
-  for (const m of (metas ?? [])) { const cur = roster.get(m.slug) ?? { slug: m.slug, nome: m.nome || cap(m.slug), meta: 0 }; cur.meta = Number(m.meta) || 0; if (m.nome) cur.nome = m.nome; roster.set(m.slug, cur); }
+  for (const n of nomes) { const s = slugDe(n); if (s && !roster.has(s)) roster.set(s, { slug: s, nome: primeiroNome(n), meta: 0 }); }
+  const { data: metas } = await sb().from("bi_meta_vendedor").select("slug,nome,meta").in("slug", [...roster.keys()]);
+  for (const m of (metas ?? [])) { const cur = roster.get(m.slug); if (cur) { cur.meta = Number(m.meta) || 0; if (m.nome) cur.nome = m.nome; } }
 
   const lista = [...roster.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
-  return Response.json({ metas: lista });
+  return Response.json({ metas: lista, grupo: q.grupo });
 }
 
 export async function POST(req: Request) {
-  const sessao = lerSessao();
-  if (!sessao) return Response.json({ error: "não autenticado" }, { status: 401 });
-  if (!podeAdmin(sessao)) return Response.json({ error: "apenas admin" }, { status: 403 });
-
+  const q = quemConfigura(req);
+  if (q instanceof Response) return q;
   let b: any;
   try { b = await req.json(); } catch { return Response.json({ error: "body inválido" }, { status: 400 }); }
   const metas = Array.isArray(b?.metas) ? b.metas : null;
   if (!metas) return Response.json({ error: "metas inválidas" }, { status: 400 });
 
+  let daFilial: Set<string>;
+  try { daFilial = await slugsDoGrupo(q.grupo); }
+  catch (e: any) { return Response.json({ error: "Não foi possível conferir os vendedores da filial: " + (e?.message ?? e) }, { status: 502 }); }
+
   const rows = metas
     .map((m: any) => ({ slug: slugDe(m.slug || m.nome), nome: m.nome ? String(m.nome) : null, meta: Math.max(0, Math.round(Number(m.meta) || 0)), atualizado_em: new Date().toISOString() }))
     .filter((r: any) => r.slug);
+  const fora = rows.filter((r: any) => !daFilial.has(r.slug));
+  if (fora.length) return Response.json({ error: "Só dá para mudar a meta de vendedores desta filial: " + fora.map((r: any) => r.slug).join(", ") }, { status: 403 });
   if (rows.length) {
     const { error } = await sb().from("bi_meta_vendedor").upsert(rows, { onConflict: "slug" });
     if (error) return Response.json({ error: error.message }, { status: 500 });

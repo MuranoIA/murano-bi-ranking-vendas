@@ -36,7 +36,7 @@ export type Sessao = {
 // Sobe quando o conteúdo da sessão muda de sentido: cookie de versão antiga não
 // vale e a pessoa passa de novo pelo hub (sem isso, quem entrou antes do recorte
 // por filial ficaria vendo as duas até a sessão vencer).
-const VERSAO_SESSAO = 2;
+const VERSAO_SESSAO = 3;
 
 function segredo(): string {
   const s = process.env.RANKING_SESSAO_SECRET || process.env.RANKING_HUB_SSO_SECRET;
@@ -102,6 +102,9 @@ export const podeAdmin = (s: Sessao | null): boolean => s?.admin === true;
 
 /** "Por dia" e "Minhas filiais": admin ou supervisor de filial (este, só na filial dele). */
 export const podeVerDia = (s: Sessao | null): boolean => s?.admin === true || s?.supervisor === true;
+
+/** Configura critério, metas, fotos, TVs e música — da filial dele, no caso do supervisor (lib/grupo.ts). */
+export const podeConfigurar = (s: Sessao | null): boolean => podeVerDia(s);
 
 /** O padrão das TVs vale para todas as filiais: só admin sem recorte de filial mexe nele. */
 export const podeMudarTv = (s: Sessao | null): boolean => s?.admin === true && s.filiais === null;

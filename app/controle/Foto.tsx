@@ -2,13 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BOTAO_CONTORNO, BOTAO_PRIMARIO, CARTAO, avisoDe } from "../../componentes/estilo";
+import { comGrupo, type Grupo } from "@/lib/grupo";
 
 type Sess = { slug: string | null; url: string | null };
 
 // A foto do consultor ao lado do nome no ranking. De QUEM é a foto o servidor
 // decide pela sessão (rota /api/foto) — aqui ninguém escolhe
 // a foto de outra pessoa. Substitui a página solta /utilitarios/foto-ranking.
-export function Foto({ admin = false }: { admin?: boolean }) {
+// `grupo`: quem configura (admin ou supervisor) escolhe entre os consultores dessa filial; null = só a própria.
+export function Foto({ grupo = null }: { grupo?: Grupo | null }) {
+  const admin = grupo !== null;
   const [sess, setSess] = useState<Sess | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
@@ -21,12 +24,13 @@ export function Foto({ admin = false }: { admin?: boolean }) {
   const [alvo, setAlvo] = useState("");
 
   useEffect(() => {
+    setAlvo("");
     if (!admin) return;
-    fetch("/api/ranking/metas-individuais", { cache: "no-store" })
+    fetch(comGrupo("/api/ranking/metas-individuais", grupo), { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { metas: [] }))
       .then((j) => setRoster((j.metas ?? []).map((m: any) => ({ slug: m.slug, nome: m.nome }))))
       .catch(() => setRoster([]));
-  }, [admin]);
+  }, [admin, grupo]);
 
   useEffect(() => {
     setFile(null);
@@ -35,7 +39,7 @@ export function Foto({ admin = false }: { admin?: boolean }) {
       if (old) URL.revokeObjectURL(old);
       return null;
     });
-    fetch("/api/foto" + (alvo ? `?slug=${encodeURIComponent(alvo)}` : ""), { cache: "no-store" })
+    fetch(comGrupo("/api/foto" + (alvo ? `?slug=${encodeURIComponent(alvo)}` : ""), grupo), { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { slug: null, url: null }))
       .then((j) => setSess({ slug: j.slug ?? null, url: j.url ?? null }))
       .catch(() => setSess({ slug: null, url: null }));
@@ -88,7 +92,7 @@ export function Foto({ admin = false }: { admin?: boolean }) {
       const fd = new FormData();
       fd.append("foto", file);
       if (alvo) fd.append("slug", alvo);
-      const r = await fetch("/api/foto", { method: "POST", body: fd });
+      const r = await fetch(comGrupo("/api/foto", grupo), { method: "POST", body: fd });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         setMsg({ ok: false, texto: j?.error ?? `Erro ${r.status}` });
@@ -101,6 +105,24 @@ export function Foto({ admin = false }: { admin?: boolean }) {
         return null;
       });
       setMsg({ ok: true, texto: "Foto atualizada! Ela já aparece no ranking (a TV atualiza em segundos)." });
+    } catch (e: any) {
+      setMsg({ ok: false, texto: e?.message ?? String(e) });
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  // tira a foto: o ranking volta a mostrar as iniciais
+  async function tirar() {
+    if (!sess?.url || !confirm("Tirar a foto do ranking?")) return;
+    setEnviando(true);
+    setMsg(null);
+    try {
+      const r = await fetch(comGrupo("/api/foto" + (alvo ? `?slug=${encodeURIComponent(alvo)}` : ""), grupo), { method: "DELETE" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.error ?? `Erro ${r.status}`);
+      setSess((s) => (s ? { ...s, url: null } : s));
+      setMsg({ ok: true, texto: "Foto tirada. A TV volta a mostrar as iniciais em segundos." });
     } catch (e: any) {
       setMsg({ ok: false, texto: e?.message ?? String(e) });
     } finally {
@@ -134,8 +156,9 @@ export function Foto({ admin = false }: { admin?: boolean }) {
         <h2 className="text-[18px] font-bold">{admin ? "Foto no ranking" : "Minha foto"}</h2>
         <div className="mt-3">{seletor}</div>
         <p className="mt-2 text-[13.5px] leading-5 text-v2-tinta-fraca">
-          A foto vai ao lado do nome de quem vende, então ela só existe para uma conta de consultor. Entre com o seu
-          usuário de consultor para enviar a sua.
+          {admin
+            ? "Escolha acima o consultor da filial para colocar, trocar ou tirar a foto dele."
+            : "A foto vai ao lado do nome de quem vende. Peça ao administrador do hub para marcar você como vendedor no Ranking (Configuração dos módulos → Ranking)."}
         </p>
       </section>
     );
@@ -190,6 +213,11 @@ export function Foto({ admin = false }: { admin?: boolean }) {
             <button onClick={subir} disabled={!file || enviando} data-ripple className={BOTAO_PRIMARIO}>
               {enviando ? "Enviando…" : "Enviar foto"}
             </button>
+            {sess.url && !file && (
+              <button onClick={tirar} disabled={enviando} data-ripple className={BOTAO_CONTORNO + " text-v2-erro"}>
+                Tirar foto
+              </button>
+            )}
           </div>
         </div>
       </div>

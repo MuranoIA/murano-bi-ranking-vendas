@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { BOTAO_CONTORNO, BOTAO_PRIMARIO, CAMPO, CARTAO, ROTULO, avisoDe } from "../../componentes/estilo";
+import { comGrupo, rotuloDoGrupo, type Grupo } from "@/lib/grupo";
 
 type Aviso = { ok: boolean; texto: string } | null;
 type MetaVendedor = { slug: string; nome: string; meta: number };
@@ -11,26 +12,26 @@ const soDigitos = (t: string) => Math.max(0, Math.round(Number(t.replace(/[^\d]/
 
 // Meta do dia (a barra de progresso do painel) e metas individuais (a tela
 // "BATEU A META"). Carregadas só quando a aba abre.
-export function Metas({ ativa }: { ativa: boolean }) {
+export function Metas({ ativa, grupo }: { ativa: boolean; grupo: Grupo }) {
   const [jaAbriu, setJaAbriu] = useState(false);
   useEffect(() => { if (ativa) setJaAbriu(true); }, [ativa]);
   if (!jaAbriu) return null;
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <MetaDoDia />
-      <MetasIndividuais />
+      <MetaDoDia grupo={grupo} />
+      <MetasIndividuais grupo={grupo} />
     </div>
   );
 }
 
-function MetaDoDia() {
+function MetaDoDia({ grupo }: { grupo: Grupo }) {
   const [atual, setAtual] = useState<number | null>(null);
   const [valor, setValor] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<Aviso>(null);
 
   useEffect(() => {
-    fetch("/api/meta")
+    fetch(comGrupo("/api/meta", grupo))
       .then((r) => r.json())
       .then((j) => {
         const m = Number(j?.meta ?? 0) || 0;
@@ -38,14 +39,14 @@ function MetaDoDia() {
         setValor(m ? String(m) : "");
       })
       .catch(() => setAviso({ ok: false, texto: "Não consegui ler a meta atual." }));
-  }, []);
+  }, [grupo]);
 
   // 0 = sem meta: o quadro da meta some do painel
   async function salvar(m: number) {
     setSalvando(true);
     setAviso(null);
     try {
-      const r = await fetch("/api/meta", {
+      const r = await fetch(comGrupo("/api/meta", grupo), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ meta: m }),
@@ -105,26 +106,26 @@ function MetaDoDia() {
   );
 }
 
-function MetasIndividuais() {
+function MetasIndividuais({ grupo }: { grupo: Grupo }) {
   const [metas, setMetas] = useState<MetaVendedor[] | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<Aviso>(null);
 
   useEffect(() => {
-    fetch("/api/ranking/metas-individuais")
+    fetch(comGrupo("/api/ranking/metas-individuais", grupo))
       .then((r) => r.json())
       .then((j) => setMetas(Array.isArray(j?.metas) ? j.metas : []))
       .catch(() => {
         setMetas([]);
         setAviso({ ok: false, texto: "Não consegui ler os vendedores." });
       });
-  }, []);
+  }, [grupo]);
 
   async function salvar() {
     setSalvando(true);
     setAviso(null);
     try {
-      const r = await fetch("/api/ranking/metas-individuais", {
+      const r = await fetch(comGrupo("/api/ranking/metas-individuais", grupo), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ metas }),
@@ -144,7 +145,7 @@ function MetasIndividuais() {
     if (!m.meta) return;
     setAviso(null);
     try {
-      const r = await fetch("/api/ranking/metabatida", {
+      const r = await fetch(comGrupo("/api/ranking/metabatida", grupo), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ slug: m.slug, nome: m.nome, meta: m.meta }),
@@ -161,8 +162,8 @@ function MetasIndividuais() {
     <section className={CARTAO}>
       <h2 className="text-[18px] font-bold">Metas individuais</h2>
       <p className="mt-1 text-[13.5px] leading-5 text-v2-tinta-fraca">
-        Meta de vendas (R$) por vendedor. Ao atingir, a tela <b>BATEU A META</b> aparece nas TVs. Vazio ou 0 é sem
-        meta.
+        Meta de vendas (R$) por vendedor de <b>{rotuloDoGrupo(grupo)}</b> (quem vendeu nessa filial nos últimos 45 dias).
+        Ao atingir, a tela <b>BATEU A META</b> aparece nas TVs. Vazio ou 0 é sem meta.
       </p>
       <div className="mt-3 divide-y divide-v2-linha">
         {metas === null ? (
