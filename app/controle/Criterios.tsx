@@ -1,9 +1,9 @@
 "use client";
 
+import { comGrupo, filiaisDoGrupo, rotuloDoGrupo, type Grupo } from "@/lib/grupo";
 import { useEffect, useState } from "react";
 import { BOTAO_CONTORNO, BOTAO_PRIMARIO, CARTAO, CHIP, CHIP_DESLIGADO, CHIP_LIGADO, ROTULO, avisoDe } from "../../componentes/estilo";
 import { CRITERIO_PADRAO, rotuloDoCriterio, type Criterio } from "@/lib/criterio";
-import { FILIAIS_PADRAO } from "@/lib/rankingFiliais";
 
 type Aviso = { ok: boolean; texto: string } | null;
 type Linha = { nome: string; liquido: number };
@@ -26,11 +26,12 @@ const ITENS: { k: "venda" | "manifesto" | "devolucoes" | "soFaturados"; rotulo: 
 // Vale para todas as TVs e para os dias anteriores. Antes de salvar, a prévia mostra o ranking de
 // hoje com o critério escolhido ao lado do padrão, para ninguém mandar às TVs um número sem ver.
 // ---------------------------------------------------------------------------
-export function Criterios({ ativa }: { ativa: boolean }) {
+export function Criterios({ ativa, grupo }: { ativa: boolean; grupo: Grupo }) {
   const [jaAbriu, setJaAbriu] = useState(false);
   const [crit, setCrit] = useState<Criterio>(CRITERIO_PADRAO);
   const [salvo, setSalvo] = useState<Criterio | null>(null);
-  const [filiaisTv, setFiliaisTv] = useState<number[]>(FILIAIS_PADRAO);
+  const filiaisTv = filiaisDoGrupo(grupo);
+  const [herdado, setHerdado] = useState(false);
   const [aviso, setAviso] = useState<Aviso>(null);
   const [salvando, setSalvando] = useState(false);
   const [previa, setPrevia] = useState<{ padrao: Previa; escolhido: Previa } | null>(null);
@@ -39,15 +40,11 @@ export function Criterios({ ativa }: { ativa: boolean }) {
 
   useEffect(() => {
     if (!jaAbriu) return;
-    fetch("/api/ranking/criterio")
+    fetch(comGrupo("/api/ranking/criterio", grupo))
       .then((r) => r.json())
-      .then((j) => { if (j?.error) throw new Error(j.error); setCrit(j.criterio); setSalvo(j.criterio); })
+      .then((j) => { if (j?.error) throw new Error(j.error); setCrit(j.criterio); setSalvo(j.criterio); setHerdado(j.herdado === true); })
       .catch((e) => setAviso({ ok: false, texto: "Não consegui ler o critério: " + (e?.message ?? e) }));
-    fetch("/api/ranking/filiais")
-      .then((r) => r.json())
-      .then((j) => { if (Array.isArray(j?.tv)) setFiliaisTv(j.tv); })
-      .catch(() => {});
-  }, [jaAbriu]);
+  }, [jaAbriu, grupo]);
 
   const nenhumTipo = crit.modo === "personalizado" && !crit.venda && !crit.manifesto;
   const mudou = salvo !== null && JSON.stringify(crit) !== JSON.stringify(salvo);
@@ -75,11 +72,11 @@ export function Criterios({ ativa }: { ativa: boolean }) {
     setSalvando(true);
     setAviso(null);
     try {
-      const r = await fetch("/api/ranking/criterio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ criterio: crit }) });
+      const r = await fetch(comGrupo("/api/ranking/criterio", grupo), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ criterio: crit }) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error ?? `erro ${r.status}`);
-      setCrit(j.criterio); setSalvo(j.criterio);
-      setAviso({ ok: true, texto: "Critério salvo. As TVs passam a usar em até 1 minuto." });
+      setCrit(j.criterio); setSalvo(j.criterio); setHerdado(false);
+      setAviso({ ok: true, texto: `Critério de ${rotuloDoGrupo(grupo)} salvo. As TVs dessa filial passam a usar em até 1 minuto.` });
     } catch (e: any) {
       setAviso({ ok: false, texto: "Não foi possível salvar: " + (e?.message ?? e) });
     } finally {
@@ -94,7 +91,8 @@ export function Criterios({ ativa }: { ativa: boolean }) {
       <section className={CARTAO}>
         <h2 className="text-[18px] font-bold">O que compõe o valor do ranking</h2>
         <p className="mt-1 text-[13.5px] leading-5 text-v2-tinta-fraca">
-          Vale para todas as TVs e também para os dias anteriores (aba “Por dia”).
+          Vale para as TVs de <b>{rotuloDoGrupo(grupo)}</b> e também para os dias anteriores dessa filial (aba “Por dia”).
+          {herdado && " Esta filial ainda não tem critério próprio: abaixo está o que valia para todas as TVs."}
         </p>
 
         <div role="radiogroup" aria-label="Modo do critério" className="mt-4 grid gap-2 sm:grid-cols-2">

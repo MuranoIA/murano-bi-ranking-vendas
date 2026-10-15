@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { COOKIE_SESSAO, opcoesDoCookie, valorDoCookie, verificarAssinado } from "@/lib/sessao";
 import { telaSegura } from "@/lib/hub";
 import { filiaisDoPapel, lerPapelRanking } from "@/lib/escopo";
+import { slugDe } from "@/lib/vendedores";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +35,11 @@ export async function GET(req: Request) {
   const sbUrl = process.env.SUPABASE_URL, chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!sbUrl || !chave) return pagina("Configuração ausente: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.", 500);
   const sb = createClient(sbUrl, chave, { auth: { persistSession: false } });
-  const [{ data: ac, error }, { data: rk, error: erroRk }] = await Promise.all([
+  const [{ data: ac, error }, { data: rk, error: erroRk }, { data: us }] = await Promise.all([
     sb.from("acesso").select("papel,papeis,carteira,ativo").eq("email", email).maybeSingle(),
     // a filial que o admin do hub deu a esta pessoa (`/ranking/admin` lá, tabela rk_papel)
-    sb.from("rk_papel").select("papel,ativo").eq("email", email).maybeSingle(),
+    sb.from("rk_papel").select("papel,nome,ativo").eq("email", email).maybeSingle(),
+    sb.from("app_usuarios").select("nome").eq("email", email).maybeSingle(),
   ]);
   // Sem conseguir ler o recorte, NÃO entra: entrar sem ele mostraria as duas filiais a quem só pode ver uma.
   // A exceção é a tabela ainda não existir (migration 0189 do hub não aplicada): aí ninguém tem recorte,
@@ -48,8 +50,14 @@ export async function GET(req: Request) {
 
   const papeis: string[] = Array.isArray(ac?.papeis) ? ac!.papeis : [];
   const admin = ac?.papel === "admin" || papeis.includes("admin");
-  const carteira = typeof ac?.carteira === "string" && ac.carteira ? ac.carteira : null;
   const papelRk = rk?.ativo === false ? null : lerPapelRanking(rk?.papel);
+  // Quem o admin do hub marcou como vendedor é consultor no Ranking, mesmo sem carteira no `acesso`
+  // (pedido do dono, 15/10/2026): o slug da foto é o 1º nome, como o ranking casa com o ERP.
+  const carteira = typeof ac?.carteira === "string" && ac.carteira
+    ? ac.carteira
+    : papelRk && !papelRk.supervisor
+      ? slugDe(rk?.nome || us?.nome || email.split("@")[0]) || null
+      : null;
   const filiais = filiaisDoPapel(papelRk);
   const supervisor = papelRk?.supervisor === true;
 

@@ -1014,7 +1014,7 @@
   // cada painel confere a cada ~6s e, quando o id muda, dispara o desfile ao vivo.
   function pollComando() {
     if (diaSel) return; // só no dia de hoje
-    fetch(API + '?comando=1', { cache: 'no-store' })
+    fetch(comFiliais(API + '?comando=1'), { cache: 'no-store' }) // comandos e música da filial deste painel
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d) return;

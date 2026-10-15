@@ -12,8 +12,11 @@ import { Musica } from "./Musica";
 import { PorDia } from "./PorDia";
 import { Filiais } from "./Filiais";
 import { Criterios } from "./Criterios";
+import { Consultores } from "./Consultores";
+import { CHIP, CHIP_DESLIGADO, CHIP_LIGADO } from "../../componentes/estilo";
+import { escolherGrupo, filiaisDoGrupo, gruposPermitidos, rotuloDoGrupo, type Grupo } from "@/lib/grupo";
 
-type Aba = "ao-vivo" | "por-dia" | "foto" | "filiais" | "criterios" | "metas" | "tvs" | "musica";
+type Aba = "ao-vivo" | "por-dia" | "foto" | "consultores" | "filiais" | "criterios" | "metas" | "tvs" | "musica";
 
 // ---------------------------------------------------------------------------
 // A TELA DO RANKING. Mesmo esqueleto do admin novo: barra fina de marca, título
@@ -23,20 +26,26 @@ type Aba = "ao-vivo" | "por-dia" | "foto" | "filiais" | "criterios" | "metas" | 
 // servidor confere de novo em cada rota. A foto é de todos os consultores: a
 // rota deduz DE QUEM é a foto da sessão, nunca do cliente.
 // ---------------------------------------------------------------------------
-// `porDia`: admin ou supervisor de filial. `filiais`: o recorte de quem entrou (null = as duas),
-// configurado no admin do hub (lib/escopo.ts) — a tela só mostra, quem recorta é o servidor.
+// `porDia`: admin ou supervisor de filial — quem configura. `filiais`: o recorte de quem entrou
+// (null = as duas), configurado no admin do hub (lib/escopo.ts) — a tela só mostra, quem recorta é o
+// servidor. Cada filial tem a sua configuração (lib/grupo.ts): o supervisor mexe só na dele; o
+// admin sem recorte escolhe no topo qual filial está configurando.
 export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: boolean; porDia: boolean; filiais: number[] | null; tema: TemaChat }) {
   const [tema, setTema] = useState<TemaChat>(temaInicial);
   // a aba mora no `#`: recarregar ou mandar o link abre na mesma seção. Lida só
   // depois de montar — o servidor não vê o `#`.
   const [aba, setAba] = useState<Aba>("ao-vivo");
+  const grupos = porDia ? gruposPermitidos(filiais) : [];
+  const [grupo, setGrupo] = useState<Grupo | null>(() => (porDia ? escolherGrupo(null, filiais) : null));
+  const config = porDia && grupo !== null;
   const ABAS: { k: Aba; rotulo: string }[] = [
     { k: "ao-vivo", rotulo: "Ao vivo" },
-    ...(porDia ? ([{ k: "por-dia", rotulo: "Por dia" }] as { k: Aba; rotulo: string }[]) : []),
+    ...(config ? ([{ k: "por-dia", rotulo: "Por dia" }] as { k: Aba; rotulo: string }[]) : []),
     { k: "foto", rotulo: "Minha foto" },
-    ...(porDia ? ([{ k: "filiais", rotulo: "Filiais" }] as { k: Aba; rotulo: string }[]) : []),
-    ...(admin
+    ...(config
       ? ([
+          { k: "consultores", rotulo: "Consultores" },
+          { k: "filiais", rotulo: "Filiais" },
           { k: "criterios", rotulo: "Critérios" },
           { k: "metas", rotulo: "Metas" },
           { k: "tvs", rotulo: "TVs" },
@@ -69,10 +78,26 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
       <main className="mx-auto w-full max-w-5xl px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-5 sm:px-6 sm:pt-8">
         <h1 className="text-[28px] font-black leading-tight tracking-[-0.03em] sm:text-[34px]">Ranking de vendas</h1>
         <p className="mt-1 max-w-2xl text-[14px] leading-5 text-v2-tinta-fraca">
-          {admin
-            ? "O painel das TVs e tudo o que o controla: ranking de qualquer dia, filiais, foto dos consultores, metas, desfile e a música dos parabéns."
+          {config
+            ? "O painel das TVs e tudo o que o controla: ranking de qualquer dia, consultores, fotos, critério, metas, desfile e a música dos parabéns — de cada filial."
             : "O painel de vendas ao vivo e a sua foto, que aparece ao lado do seu nome."}
         </p>
+
+        {config && grupo && (
+          grupos.length > 1 ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label="Filial que você está configurando">
+              <span className="text-[13px] font-semibold text-v2-tinta-fraca">Configurando:</span>
+              {grupos.map((g) => (
+                <button key={g} type="button" aria-pressed={grupo === g} onClick={() => setGrupo(g)} data-ripple
+                  className={[CHIP, grupo === g ? CHIP_LIGADO : CHIP_DESLIGADO].join(" ")}>
+                  {rotuloDoGrupo(g)}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-[13.5px]"><span className="text-v2-tinta-fraca">Sua filial:</span> <b>{rotuloDoGrupo(grupo)}</b></p>
+          )
+        )}
 
         <div role="tablist" aria-label="Seções do ranking" className="mt-5 flex gap-2 overflow-x-auto pb-1">
           {ABAS.map((a) => (
@@ -99,34 +124,33 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
         {/* As seções ficam montadas e a aba só esconde: um envio de música em
             andamento roda NESTA página, e desmontar a seção o perderia. */}
         <div id="secao-ao-vivo" role="tabpanel" aria-labelledby="aba-ao-vivo" hidden={aba !== "ao-vivo"} className="mt-4">
-          <AoVivo porDia={porDia} filiais={filiais} />
+          <AoVivo porDia={config} filiais={grupo ? filiaisDoGrupo(grupo) : filiais} />
         </div>
         <div id="secao-foto" role="tabpanel" aria-labelledby="aba-foto" hidden={aba !== "foto"} className="mt-4">
-          <Foto admin={admin} />
+          <Foto key={grupo ?? "-"} grupo={config ? grupo : null} />
         </div>
-        {porDia && (
+        {config && grupo && (
           <>
             <div id="secao-por-dia" role="tabpanel" aria-labelledby="aba-por-dia" hidden={aba !== "por-dia"} className="mt-4">
               <PorDia ativa={aba === "por-dia"} />
             </div>
+            <div id="secao-consultores" role="tabpanel" aria-labelledby="aba-consultores" hidden={aba !== "consultores"} className="mt-4">
+              <Consultores ativa={aba === "consultores"} grupo={grupo} />
+            </div>
             <div id="secao-filiais" role="tabpanel" aria-labelledby="aba-filiais" hidden={aba !== "filiais"} className="mt-4">
               <Filiais ativa={aba === "filiais"} />
             </div>
-          </>
-        )}
-        {admin && (
-          <>
             <div id="secao-criterios" role="tabpanel" aria-labelledby="aba-criterios" hidden={aba !== "criterios"} className="mt-4">
-              <Criterios ativa={aba === "criterios"} />
+              <Criterios key={grupo} ativa={aba === "criterios"} grupo={grupo} />
             </div>
             <div id="secao-metas" role="tabpanel" aria-labelledby="aba-metas" hidden={aba !== "metas"} className="mt-4">
-              <Metas ativa={aba === "metas"} />
+              <Metas key={grupo} ativa={aba === "metas"} grupo={grupo} />
             </div>
             <div id="secao-tvs" role="tabpanel" aria-labelledby="aba-tvs" hidden={aba !== "tvs"} className="mt-4">
-              <Tvs />
+              <Tvs ativa={aba === "tvs"} grupo={grupo} />
             </div>
             <div id="secao-musica" role="tabpanel" aria-labelledby="aba-musica" hidden={aba !== "musica"} className="mt-4">
-              <Musica ativa={aba === "musica"} />
+              <Musica ativa={aba === "musica"} grupo={grupo} />
             </div>
           </>
         )}

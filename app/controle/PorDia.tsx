@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BOTAO_CONTORNO, CAMPO, CARTAO, ROTULO, avisoDe } from "../../componentes/estilo";
 import { FILIAIS_PADRAO } from "@/lib/rankingFiliais";
 import { SeletorFiliais } from "./SeletorFiliais";
+import { gruposPermitidos, rotuloDoGrupo } from "@/lib/grupo";
 
 type Linha = { nome: string; bruto: number; devolucoes: number; liquido: number; pedidos: number; clientes: number };
 type Resposta = {
@@ -95,8 +96,18 @@ export function PorDia({ ativa }: { ativa: boolean }) {
           </div>
         </div>
         <div className="mt-4">
-          <span className={ROTULO}>Filiais</span>
-          <div className="mt-1.5"><SeletorFiliais valor={filiais} aoMudar={setFiliais} permitidas={permitidas} /></div>
+          {/* o supervisor tem uma filial só: aparece o nome dela, sem botões para escolher */}
+          {gruposPermitidos(permitidas).length === 1 ? (
+            <>
+              <span className={ROTULO}>Filial</span>
+              <p className="mt-1.5 text-[15px] font-semibold">{rotuloDoGrupo(gruposPermitidos(permitidas)[0])}</p>
+            </>
+          ) : (
+            <>
+              <span className={ROTULO}>Filiais</span>
+              <div className="mt-1.5"><SeletorFiliais valor={filiais} aoMudar={setFiliais} permitidas={permitidas} /></div>
+            </>
+          )}
         </div>
       </section>
 
