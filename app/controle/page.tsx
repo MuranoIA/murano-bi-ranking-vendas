@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { lerSessao } from "@/lib/sessao";
+import { lerSessao, podeVerDia } from "@/lib/sessao";
 import { entradaPeloHub } from "@/lib/hub";
 import { COOKIE_TEMA_CHAT, temaChatDe } from "@/lib/temaChat";
 import { Ranking } from "./Ranking";
@@ -20,5 +20,5 @@ export default function PaginaControle() {
   const sessao = lerSessao();
   if (!sessao) redirect(entradaPeloHub("/controle"));
   const tema = temaChatDe(cookies().get(COOKIE_TEMA_CHAT)?.value);
-  return <Ranking admin={sessao.admin} tema={tema} />;
+  return <Ranking admin={sessao.admin} porDia={podeVerDia(sessao)} filiais={sessao.filiais} tema={tema} />;
 }

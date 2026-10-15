@@ -10,10 +10,13 @@ type Aviso = { ok: boolean; texto: string } | null;
 // Quais filiais aparecem no ranking. Duas escolhas independentes:
 //  - a SUA, usada na aba "Por dia" (cada supervisor marca a dele);
 //  - o padrão das TVs, lido pelo painel público.
+// Quem tem filial definida no admin do hub (lib/escopo.ts) só vê a dele e não mexe nas TVs.
 export function Filiais({ ativa }: { ativa: boolean }) {
   const [jaAbriu, setJaAbriu] = useState(false);
   const [minha, setMinha] = useState<number[]>(FILIAIS_PADRAO);
   const [tv, setTv] = useState<number[]>(FILIAIS_PADRAO);
+  const [permitidas, setPermitidas] = useState<number[] | null>(null);
+  const [podeTv, setPodeTv] = useState(false);
   const [carregou, setCarregou] = useState(false);
   const [salvando, setSalvando] = useState<"minha" | "tv" | null>(null);
   const [aviso, setAviso] = useState<Aviso>(null);
@@ -24,7 +27,7 @@ export function Filiais({ ativa }: { ativa: boolean }) {
       .then((r) => r.json())
       .then((j) => {
         if (j?.error) throw new Error(j.error);
-        setMinha(j.minha); setTv(j.tv); setCarregou(true);
+        setMinha(j.minha); setTv(j.tv); setPermitidas(Array.isArray(j.permitidas) ? j.permitidas : null); setPodeTv(j.podeTv === true); setCarregou(true);
       })
       .catch((e) => setAviso({ ok: false, texto: "Não consegui ler as filiais: " + (e?.message ?? e) }));
   }, [jaAbriu]);
@@ -54,14 +57,16 @@ export function Filiais({ ativa }: { ativa: boolean }) {
       <section className={CARTAO}>
         <h2 className="text-[18px] font-bold">Minhas filiais</h2>
         <p className="mt-1 text-[13.5px] leading-5 text-v2-tinta-fraca">
-          O que aparece para você na aba “Por dia”. O supervisor de Belém marca só Belém; o do Maranhão, só Maranhão.
+          {permitidas
+            ? "O que aparece para você na aba “Por dia”. A sua filial foi definida pelo administrador do hub."
+            : "O que aparece para você na aba “Por dia”. O supervisor de Belém marca só Belém; o do Maranhão, só Maranhão."}
         </p>
-        <div className="mt-4"><SeletorFiliais valor={minha} aoMudar={setMinha} desabilitado={!carregou} /></div>
+        <div className="mt-4"><SeletorFiliais valor={minha} aoMudar={setMinha} desabilitado={!carregou} permitidas={permitidas} /></div>
         <button onClick={() => salvar("minha", minha)} disabled={!carregou || salvando !== null} data-ripple className={BOTAO_PRIMARIO + " mt-4"}>
           {salvando === "minha" ? "Salvando…" : "Salvar minha escolha"}
         </button>
       </section>
-      <section className={CARTAO}>
+      {podeTv && <section className={CARTAO}>
         <h2 className="text-[18px] font-bold">Painel das TVs</h2>
         <p className="mt-1 text-[13.5px] leading-5 text-v2-tinta-fraca">
           As filiais que o painel público mostra por padrão. Vale para todas as TVs ligadas a este endereço.
@@ -70,7 +75,7 @@ export function Filiais({ ativa }: { ativa: boolean }) {
         <button onClick={() => salvar("tv", tv)} disabled={!carregou || salvando !== null} data-ripple className={BOTAO_PRIMARIO + " mt-4"}>
           {salvando === "tv" ? "Salvando…" : "Salvar padrão das TVs"}
         </button>
-      </section>
+      </section>}
       {aviso && <p role="status" className={avisoDe(aviso.ok) + " lg:col-span-2"}>{aviso.texto}</p>}
     </div>
   );

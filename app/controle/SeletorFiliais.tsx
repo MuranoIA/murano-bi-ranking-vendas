@@ -4,7 +4,9 @@ import { CHIP, CHIP_DESLIGADO, CHIP_LIGADO } from "../../componentes/estilo";
 import { GRUPOS_FILIAL, filiaisDosGrupos, gruposMarcados } from "@/lib/rankingFiliais";
 
 // Chips Belém / Maranhão. Pelo menos um fica ligado: sem filial não há ranking.
-export function SeletorFiliais({ valor, aoMudar, desabilitado }: { valor: number[]; aoMudar: (f: number[]) => void; desabilitado?: boolean }) {
+// `permitidas`: o recorte de quem está logado (lib/escopo.ts); só os grupos dentro dele aparecem.
+export function SeletorFiliais({ valor, aoMudar, desabilitado, permitidas }: { valor: number[]; aoMudar: (f: number[]) => void; desabilitado?: boolean; permitidas?: number[] | null }) {
+  const grupos = GRUPOS_FILIAL.filter((g) => !permitidas || g.filiais.every((f) => permitidas.includes(f)));
   const ligados = gruposMarcados(valor);
   function alternar(id: string) {
     const novo = ligados.includes(id) ? ligados.filter((x) => x !== id) : [...ligados, id];
@@ -12,7 +14,7 @@ export function SeletorFiliais({ valor, aoMudar, desabilitado }: { valor: number
   }
   return (
     <div role="group" aria-label="Filiais" className="flex flex-wrap gap-2">
-      {GRUPOS_FILIAL.map((g) => (
+      {grupos.map((g) => (
         <button
           key={g.id}
           type="button"

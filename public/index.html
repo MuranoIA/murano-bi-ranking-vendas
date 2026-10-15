@@ -568,6 +568,10 @@
   var META_DIA = 0; // fallback; o valor real vem de d.meta (bi_config, definido pelo admin no CRM)
   // dia a exibir vem da URL (?dia=AAAA-MM-DD), controlado pelo CRM. Sem o param = hoje (ao vivo).
   var diaSel = (new URLSearchParams(location.search)).get('dia') || null;
+  // ?filiais=3 (ou 1,2): o painel aberto pela tela de controle mostra só a filial de quem abriu
+  // (configuração do Ranking no admin do hub). Sem ele, vale o padrão das TVs.
+  var filiaisSel = ((new URLSearchParams(location.search)).get('filiais') || '').replace(/[^0-9,]/g, '');
+  function comFiliais(u) { return filiaisSel ? u + (u.indexOf('?') < 0 ? '?' : '&') + 'filiais=' + filiaisSel : u; }
   var desfileMode = (new URLSearchParams(location.search)).get('desfile'); // ?desfile=1 = desfile único
   var brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
   var pctF = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
@@ -977,7 +981,7 @@
   var DESFILE_MS = 3000;
   function rodarDesfile() {
     desfilando = true;
-    fetch(API + '?vendas=1', { cache: 'no-store' })
+    fetch(comFiliais(API + '?vendas=1'), { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (d) {
         var vendas = (d && d.vendas) || [];
@@ -1001,7 +1005,7 @@
   function finalizarDesfile() {
     esconderFesta();
     desfilando = false;
-    try { history.replaceState({}, '', location.pathname); } catch (e) {}
+    try { history.replaceState({}, '', location.pathname + (filiaisSel ? '?filiais=' + filiaisSel : '')); } catch (e) {}
     baseVendas = null;
     load();
   }
@@ -1045,7 +1049,7 @@
   }
 
   function load() {
-    var u = API + (diaSel ? ('?dia=' + encodeURIComponent(diaSel)) : '');
+    var u = comFiliais(API + (diaSel ? ('?dia=' + encodeURIComponent(diaSel)) : ''));
     fetch(u, { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(render)

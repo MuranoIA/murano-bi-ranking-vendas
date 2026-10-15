@@ -28,6 +28,7 @@ export function PorDia({ ativa }: { ativa: boolean }) {
   const [jaAbriu, setJaAbriu] = useState(false);
   const [dia, setDia] = useState(hojeBelem());
   const [filiais, setFiliais] = useState<number[]>(FILIAIS_PADRAO);
+  const [permitidas, setPermitidas] = useState<number[] | null>(null);
   const [prontoFiliais, setProntoFiliais] = useState(false);
   const [dados, setDados] = useState<Resposta | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -39,7 +40,7 @@ export function PorDia({ ativa }: { ativa: boolean }) {
     if (!jaAbriu) return;
     fetch("/api/ranking/filiais")
       .then((r) => r.json())
-      .then((j) => { if (Array.isArray(j?.minha)) setFiliais(j.minha); })
+      .then((j) => { if (Array.isArray(j?.minha)) setFiliais(j.minha); if (Array.isArray(j?.permitidas)) setPermitidas(j.permitidas); })
       .catch(() => {})
       .finally(() => setProntoFiliais(true));
   }, [jaAbriu]);
@@ -95,7 +96,7 @@ export function PorDia({ ativa }: { ativa: boolean }) {
         </div>
         <div className="mt-4">
           <span className={ROTULO}>Filiais</span>
-          <div className="mt-1.5"><SeletorFiliais valor={filiais} aoMudar={setFiliais} /></div>
+          <div className="mt-1.5"><SeletorFiliais valor={filiais} aoMudar={setFiliais} permitidas={permitidas} /></div>
         </div>
       </section>
 

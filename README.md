@@ -20,6 +20,16 @@ admin aqui** (Por dia, Filiais, Metas, TVs, Música); a carteira diz de quem é 
 "Minha foto". A sessão é um cookie assinado de 8 h (`rk_sessao`, SameSite=None,
 Partitioned).
 
+## Quem vê qual filial
+
+O admin do hub define em `/ranking/admin` (tabela `rk_papel`, migration 0189 do
+murano-app) quem é supervisor ou vendedor de Belém ou do Maranhão. No SSO a
+filial entra na sessão (`lib/escopo.ts`) e as rotas recortam por ela:
+supervisor de filial ganha "Por dia" e "Filiais" só da filial; vendedor, o ao
+vivo da filial e a foto. Quem não está na tabela vê as duas, como antes. O
+"Abrir o ranking" passa `?filiais=` ao painel. O painel das TVs e a edge
+function continuam públicos (as TVs não têm login).
+
 ## Variáveis (Vercel)
 
 | nome | valor |

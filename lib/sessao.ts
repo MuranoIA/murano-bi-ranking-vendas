@@ -26,8 +26,17 @@ export type Sessao = {
   admin: boolean;
   /** slug do vendedor (`acesso.carteira`): de quem é a "Minha foto" */
   carteira: string | null;
+  /** filiais (codfilial) que a pessoa pode ver; null = todas (quem não está em `rk_papel`) */
+  filiais: number[] | null;
+  /** supervisor de filial em `rk_papel`: ganha o "Por dia" da filial dele */
+  supervisor: boolean;
   exp: number;
 };
+
+// Sobe quando o conteúdo da sessão muda de sentido: cookie de versão antiga não
+// vale e a pessoa passa de novo pelo hub (sem isso, quem entrou antes do recorte
+// por filial ficaria vendo as duas até a sessão vencer).
+const VERSAO_SESSAO = 2;
 
 function segredo(): string {
   const s = process.env.RANKING_SESSAO_SECRET || process.env.RANKING_HUB_SSO_SECRET;
@@ -57,7 +66,7 @@ export function verificarAssinado(token: string | null | undefined, chave: strin
 }
 
 export function valorDoCookie(s: Omit<Sessao, "exp">): string {
-  const payload: Sessao = { ...s, exp: Math.floor(Date.now() / 1000) + DURACAO_SESSAO_S };
+  const payload = { ...s, v: VERSAO_SESSAO, exp: Math.floor(Date.now() / 1000) + DURACAO_SESSAO_S };
   const b64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${b64}.${assinar(b64, segredo())}`;
 }
@@ -76,13 +85,23 @@ export function lerSessao(): Sessao | null {
   let chave: string;
   try { chave = segredo(); } catch { return null; }
   const p = verificarAssinado(cookies().get(COOKIE_SESSAO)?.value, chave);
-  if (!p || typeof p.email !== "string") return null;
+  if (!p || typeof p.email !== "string" || p.v !== VERSAO_SESSAO) return null;
+  const filiais = Array.isArray(p.filiais) ? p.filiais.map(Number).filter((n) => Number.isInteger(n)) : null;
   return {
     email: p.email,
     admin: p.admin === true,
     carteira: typeof p.carteira === "string" && p.carteira ? p.carteira : null,
+    filiais,
+    supervisor: p.supervisor === true,
     exp: p.exp as number,
   };
 }
 
+/** Admin do `acesso` (CRM): as abas de configuração (Critérios, Metas, TVs, Música). */
 export const podeAdmin = (s: Sessao | null): boolean => s?.admin === true;
+
+/** "Por dia" e "Minhas filiais": admin ou supervisor de filial (este, só na filial dele). */
+export const podeVerDia = (s: Sessao | null): boolean => s?.admin === true || s?.supervisor === true;
+
+/** O padrão das TVs vale para todas as filiais: só admin sem recorte de filial mexe nele. */
+export const podeMudarTv = (s: Sessao | null): boolean => s?.admin === true && s.filiais === null;

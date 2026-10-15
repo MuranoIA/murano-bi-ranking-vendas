@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { COOKIE_SESSAO, opcoesDoCookie, valorDoCookie, verificarAssinado } from "@/lib/sessao";
 import { telaSegura } from "@/lib/hub";
+import { filiaisDoPapel, lerPapelRanking } from "@/lib/escopo";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,8 @@ export const dynamic = "force-dynamic";
 // o quadro para cá. Conferida a assinatura, o papel sai da MESMA tabela que o
 // Pulse usa (`acesso`, no banco do CRM): admin lá é admin aqui, e a carteira
 // diz de quem é a "Minha foto".
+//
+// O recorte por filial vem de `rk_papel` (configurado no admin do hub, ver lib/escopo.ts).
 //
 // Quem está no hub mas não tem linha em `acesso` entra como consultor sem
 // carteira: vê o ranking ao vivo, e a aba da foto explica que é para vendedores.
@@ -31,17 +34,28 @@ export async function GET(req: Request) {
   const sbUrl = process.env.SUPABASE_URL, chave = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!sbUrl || !chave) return pagina("Configuração ausente: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.", 500);
   const sb = createClient(sbUrl, chave, { auth: { persistSession: false } });
-  const { data: ac, error } = await sb.from("acesso").select("papel,papeis,carteira,ativo").eq("email", email).maybeSingle();
-  if (error) return pagina("Não foi possível conferir o seu acesso agora. Tente de novo em instantes.", 500);
+  const [{ data: ac, error }, { data: rk, error: erroRk }] = await Promise.all([
+    sb.from("acesso").select("papel,papeis,carteira,ativo").eq("email", email).maybeSingle(),
+    // a filial que o admin do hub deu a esta pessoa (`/ranking/admin` lá, tabela rk_papel)
+    sb.from("rk_papel").select("papel,ativo").eq("email", email).maybeSingle(),
+  ]);
+  // Sem conseguir ler o recorte, NÃO entra: entrar sem ele mostraria as duas filiais a quem só pode ver uma.
+  // A exceção é a tabela ainda não existir (migration 0189 do hub não aplicada): aí ninguém tem recorte,
+  // e o Ranking segue como era — o deploy daqui não depende da ordem do de lá.
+  const semTabela = erroRk?.code === "PGRST205" || erroRk?.code === "42P01";
+  if (error || (erroRk && !semTabela)) return pagina("Não foi possível conferir o seu acesso agora. Tente de novo em instantes.", 500);
   if (ac?.ativo === false) return pagina("Seu acesso ao Ranking está desativado. Fale com um administrador.", 403);
 
   const papeis: string[] = Array.isArray(ac?.papeis) ? ac!.papeis : [];
   const admin = ac?.papel === "admin" || papeis.includes("admin");
   const carteira = typeof ac?.carteira === "string" && ac.carteira ? ac.carteira : null;
+  const papelRk = rk?.ativo === false ? null : lerPapelRanking(rk?.papel);
+  const filiais = filiaisDoPapel(papelRk);
+  const supervisor = papelRk?.supervisor === true;
 
   const destino = telaSegura(url.searchParams.get("volta")) ?? "/controle";
   const res = NextResponse.redirect(new URL(destino, url.origin), { status: 303 });
   res.headers.set("cache-control", "no-store");
-  res.cookies.set(COOKIE_SESSAO, valorDoCookie({ email, admin, carteira }), opcoesDoCookie);
+  res.cookies.set(COOKIE_SESSAO, valorDoCookie({ email, admin, carteira, filiais, supervisor }), opcoesDoCookie);
   return res;
 }
