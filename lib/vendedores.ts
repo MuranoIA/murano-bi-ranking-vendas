@@ -7,32 +7,54 @@ import { filiaisDoGrupo, type Grupo } from "./grupo";
 const V2_URL = "https://jjvbmqycgjgkwidgcmif.supabase.co";
 const DIAS = 45;
 const VALIDADE_MS = 10 * 60 * 1000;
-const cache = new Map<Grupo, { em: number; nomes: string[] }>();
+export type VendedorErp = { nome: string; rca: number | null; pedidos: number; ultima: string };
+const cache = new Map<Grupo, { em: number; lista: VendedorErp[] }>();
 
-export const normalizar = (s: unknown) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+export const normalizar = (s: unknown) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
 /** O slug do ranking é o 1º nome (bi_fotos_ranking, bi_meta_vendedor e a edge function usam o mesmo). */
 export const slugDe = (nome: unknown) => normalizar(nome).split(" ")[0] || "";
+/** A chave do vendedor na edge function do ranking: o nome do ERP aparado e em maiúsculas. */
+export const chaveNome = (n: unknown) => String(n ?? "").trim().toUpperCase();
 
-/** Nomes (como no ERP) de quem vendeu na filial. Lança se o v2 não responder. */
-export async function vendedoresDoGrupo(g: Grupo): Promise<string[]> {
+/** Quem vendeu na filial (nome do ERP, RCA = codusr, pedidos e última venda). Lança se o v2 não responder. */
+export async function vendedoresDetalhados(g: Grupo): Promise<VendedorErp[]> {
   const c = cache.get(g);
-  if (c && Date.now() - c.em < VALIDADE_MS) return c.nomes;
+  if (c && Date.now() - c.em < VALIDADE_MS) return c.lista;
   const { data: cfg } = await sb().from("bi_config").select("valor").eq("chave", "v2_anon_key").maybeSingle();
   if (!cfg?.valor) throw new Error("bi_config sem v2_anon_key");
   const hdr = { apikey: cfg.valor, Authorization: "Bearer " + cfg.valor };
   const desde = new Date(Date.now() - DIAS * 86400000).toISOString().slice(0, 10);
-  const nomes = new Set<string>();
+  const porNome = new Map<string, { nome: string; rcas: Map<number, number>; pedidos: Set<number>; ultima: string }>();
   for (let offset = 0; ; offset += 1000) {
-    const q = `select=nome_usuario&tv=in.(1,14)&codfilial=in.(${filiaisDoGrupo(g).join(",")})&data_emissao=gte.${desde}&order=id.asc&limit=1000&offset=${offset}`;
+    const q = `select=nome_usuario,codusr,pedido,data_emissao&tv=in.(1,14)&codfilial=in.(${filiaisDoGrupo(g).join(",")})&data_emissao=gte.${desde}&order=id.asc&limit=1000&offset=${offset}`;
     const r = await fetch(`${V2_URL}/rest/v1/faturamento?${q}`, { headers: hdr, cache: "no-store" });
     if (!r.ok) throw new Error("v2 HTTP " + r.status);
-    const lote: { nome_usuario: string | null }[] = await r.json();
-    for (const l of lote) if (l.nome_usuario && l.nome_usuario.trim()) nomes.add(l.nome_usuario.trim());
+    const lote: { nome_usuario: string | null; codusr: number | null; pedido: number | null; data_emissao: string | null }[] = await r.json();
+    for (const l of lote) {
+      if (!l.nome_usuario || !l.nome_usuario.trim()) continue;
+      const k = chaveNome(l.nome_usuario);
+      const v = porNome.get(k) ?? { nome: l.nome_usuario.trim(), rcas: new Map(), pedidos: new Set(), ultima: "" };
+      if (l.codusr != null) v.rcas.set(l.codusr, (v.rcas.get(l.codusr) ?? 0) + 1);
+      if (l.pedido != null) v.pedidos.add(l.pedido);
+      if (l.data_emissao && l.data_emissao > v.ultima) v.ultima = l.data_emissao;
+      porNome.set(k, v);
+    }
     if (lote.length < 1000) break;
   }
-  const lista = [...nomes];
-  cache.set(g, { em: Date.now(), nomes: lista });
+  // o RCA é o mais frequente do nome (um nome com dois codusr é raro e quase sempre digitação)
+  const lista = [...porNome.values()].map((v) => ({
+    nome: v.nome,
+    rca: [...v.rcas.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null,
+    pedidos: v.pedidos.size,
+    ultima: v.ultima.slice(0, 10),
+  }));
+  cache.set(g, { em: Date.now(), lista });
   return lista;
+}
+
+/** Nomes (como no ERP) de quem vendeu na filial. Lança se o v2 não responder. */
+export async function vendedoresDoGrupo(g: Grupo): Promise<string[]> {
+  return (await vendedoresDetalhados(g)).map((v) => v.nome);
 }
 
 /** Nomes dos consultores que o admin ou o supervisor cadastrou na filial (rk_papel vendedor_<grupo>). */

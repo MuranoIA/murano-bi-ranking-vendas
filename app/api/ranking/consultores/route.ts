@@ -1,96 +1,64 @@
-import { quemConfigura, sb } from "@/lib/config";
-import { rotuloDoGrupo, type Grupo } from "@/lib/grupo";
-import { normalizar } from "@/lib/vendedores";
+import { gravarDaFilial, lerDaFilial, quemConfigura } from "@/lib/config";
+import { chaveNome, vendedoresDetalhados } from "@/lib/vendedores";
 
 export const dynamic = "force-dynamic";
 
-// CONSULTORES DA FILIAL (pedido do dono, 15/10/2026): o supervisor adiciona e tira os
-// vendedores da filial dele no Ranking, sem depender do admin do hub. É a mesma tabela que o
-// admin do hub edita em `/ranking/admin` (rk_papel, migration 0189 do murano-app):
-//  GET  ?grupo=           os consultores da filial; com &busca=texto, as contas do hub que batem
-//  POST { email }         vira vendedor_<grupo> e ganha o card do Ranking no hub (sem o card a
-//                         pessoa nem chega ao Ranking, que entra pelo hub)
-//  DELETE ?email=         demite: desativa (só quem é vendedor DESTA filial) e tira o card do Ranking
-// O supervisor nunca mexe em supervisor nem em gente da outra filial. Quem foi adicionado entra
-// como consultor no próximo acesso (a sessão é refeita pelo hub).
-const papelDo = (g: Grupo) => `vendedor_${g}`;
-const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// CONSULTORES DA FILIAL (pedido do dono, 15/10/2026): a lista vem do BANCO, não de cadastro.
+// São as pessoas que lançaram venda na filial nos últimos 45 dias, no faturamento do v2 (a mesma
+// fonte do ranking), cada uma com o RCA (codusr). A filial sai da venda: o RCA vende em uma filial
+// só (o "Administrativo Venus" vende nas duas e aparece nas duas). O supervisor só decide quem
+// APARECE no ranking da filial dele:
+//  GET  ?grupo=              a lista, com `aparece`
+//  PATCH { nome, aparece }   esconde ou volta a mostrar
+// Os escondidos ficam em bi_config `ranking_ocultos:<grupo>` (JSON com os nomes em maiúsculas, a
+// chave da edge function bi-ranking-vendas, que tira a pessoa da lista e da chamada de venda; as
+// vendas dela continuam no total da filial).
+const BASE = "ranking_ocultos";
 
-const descrever = (papel: string) => {
-  const m = /^(supervisor|vendedor)_(belem|maranhao)$/.exec(papel);
-  return m ? `${m[1] === "supervisor" ? "supervisor" : "consultor"} de ${rotuloDoGrupo(m[2] as Grupo)}` : papel;
-};
+async function lerOcultos(g: Parameters<typeof lerDaFilial>[1]): Promise<string[]> {
+  const { valor, herdado } = await lerDaFilial(BASE, g);
+  if (herdado || !valor) return [];
+  try { const o = JSON.parse(valor); return Array.isArray(o) ? o.map(chaveNome).filter(Boolean) : []; } catch { return []; }
+}
 
 export async function GET(req: Request) {
   const q = quemConfigura(req);
   if (q instanceof Response) return q;
-  const c = sb();
-  const busca = normalizar(new URL(req.url).searchParams.get("busca"));
-  if (busca) {
-    if (busca.length < 2) return Response.json({ contas: [] });
-    const t = busca.replace(/[%_,()]/g, "");
-    const { data, error } = await c.from("app_usuarios").select("email,nome").eq("ativo", true)
-      .or(`nome.ilike.%${t}%,email.ilike.%${t}%`).order("nome").limit(15);
-    if (error) return Response.json({ error: error.message }, { status: 500 });
-    const emails = (data ?? []).map((u: any) => String(u.email).toLowerCase());
-    const { data: rk } = emails.length ? await c.from("rk_papel").select("email,papel,ativo").in("email", emails) : { data: [] as any[] };
-    const papelDe = new Map((rk ?? []).filter((r: any) => r.ativo).map((r: any) => [r.email, r.papel]));
-    return Response.json({
-      contas: (data ?? []).map((u: any) => {
-        const email = String(u.email).toLowerCase();
-        const papel = papelDe.get(email) as string | undefined;
-        return { email, nome: u.nome ?? email, situacao: papel ? descrever(papel) : null, jaEhDaFilial: papel === papelDo(q.grupo) };
-      }),
-    });
+  try {
+    const [erp, ocultos] = await Promise.all([vendedoresDetalhados(q.grupo), lerOcultos(q.grupo)]);
+    const escondidos = new Set(ocultos);
+    const vistos = new Set(erp.map((v) => chaveNome(v.nome)));
+    const consultores = [
+      ...erp.map((v) => ({ ...v, aparece: !escondidos.has(chaveNome(v.nome)) })),
+      // escondido que não vendeu na janela: continua na lista, para poder voltar
+      ...ocultos.filter((k) => !vistos.has(k)).map((k) => ({ nome: k, rca: null, pedidos: 0, ultima: "", aparece: false })),
+    ].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+    return Response.json({ consultores, grupo: q.grupo });
+  } catch (e: any) {
+    return Response.json({ error: e?.message ?? String(e) }, { status: 502 });
   }
-
-  const { data, error } = await c.from("rk_papel").select("email,nome").eq("papel", papelDo(q.grupo)).eq("ativo", true);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  const emails = (data ?? []).map((r: any) => r.email);
-  const { data: us } = emails.length ? await c.from("app_usuarios").select("email,nome").in("email", emails) : { data: [] as any[] };
-  const nomeDe = new Map((us ?? []).map((u: any) => [String(u.email).toLowerCase(), u.nome]));
-  const consultores = (data ?? [])
-    .map((r: any) => ({ email: r.email, nome: r.nome || nomeDe.get(r.email) || r.email }))
-    .sort((a: any, b: any) => a.nome.localeCompare(b.nome, "pt-BR"));
-  return Response.json({ consultores, grupo: q.grupo });
 }
 
-export async function POST(req: Request) {
+export async function PATCH(req: Request) {
   const q = quemConfigura(req);
   if (q instanceof Response) return q;
   let b: any;
   try { b = await req.json(); } catch { return Response.json({ error: "body inválido" }, { status: 400 }); }
-  const email = String(b?.email ?? "").trim().toLowerCase();
-  if (!EMAIL_OK.test(email)) return Response.json({ error: "E-mail inválido." }, { status: 400 });
-
-  const c = sb();
-  const { data: conta } = await c.from("app_usuarios").select("id,nome,ativo").eq("email", email).maybeSingle();
-  if (!conta || conta.ativo === false) return Response.json({ error: "Essa pessoa não tem conta ativa no hub. Peça ao administrador do hub para criar a conta." }, { status: 404 });
-
-  const { data: atual } = await c.from("rk_papel").select("papel,ativo").eq("email", email).maybeSingle();
-  if (atual?.ativo && atual.papel !== papelDo(q.grupo)) {
-    return Response.json({ error: `Essa pessoa já está no Ranking como ${descrever(atual.papel)}. Só o administrador do hub muda isso.` }, { status: 409 });
+  const k = chaveNome(b?.nome);
+  if (!k || typeof b?.aparece !== "boolean") return Response.json({ error: "Informe nome e aparece." }, { status: 400 });
+  try {
+    const ocultos = new Set(await lerOcultos(q.grupo));
+    if (b.aparece) ocultos.delete(k);
+    else {
+      // só esconde quem é da filial (ou já estava escondido)
+      const daFilial = (await vendedoresDetalhados(q.grupo)).some((v) => chaveNome(v.nome) === k);
+      if (!daFilial && !ocultos.has(k)) return Response.json({ error: "Esse consultor não vendeu nesta filial." }, { status: 404 });
+      ocultos.add(k);
+    }
+    const erro = await gravarDaFilial(BASE, q.grupo, JSON.stringify([...ocultos].sort()));
+    if (erro) return Response.json({ error: erro }, { status: 500 });
+    return Response.json({ ok: true, nome: k, aparece: b.aparece });
+  } catch (e: any) {
+    return Response.json({ error: e?.message ?? String(e) }, { status: 502 });
   }
-  const { error } = await c.from("rk_papel").upsert({ email, papel: papelDo(q.grupo), nome: conta.nome ?? null, ativo: true }, { onConflict: "email" });
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-
-  // o card do Ranking no hub: é por ele que a pessoa entra
-  const { error: erroCard } = await c.from("app_modulo_acesso")
-    .upsert({ usuario_id: conta.id, modulo_slug: "ranking" }, { onConflict: "usuario_id,modulo_slug", ignoreDuplicates: true });
-  return Response.json({ ok: true, email, nome: conta.nome ?? email, avisoCard: erroCard ? "Consultor adicionado, mas não consegui liberar o card do Ranking no hub: peça ao administrador." : null });
-}
-
-export async function DELETE(req: Request) {
-  const q = quemConfigura(req);
-  if (q instanceof Response) return q;
-  const email = String(new URL(req.url).searchParams.get("email") ?? "").trim().toLowerCase();
-  if (!EMAIL_OK.test(email)) return Response.json({ error: "E-mail inválido." }, { status: 400 });
-  // só desativa vendedor desta filial (o filtro de papel garante)
-  const { data, error } = await sb().from("rk_papel").update({ ativo: false }).eq("email", email).eq("papel", papelDo(q.grupo)).select("email");
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  if (!data?.length) return Response.json({ error: "Essa pessoa não é consultora desta filial." }, { status: 404 });
-  // tira o card do Ranking no hub (quem manda no card dos outros sistemas continua sendo o admin do hub)
-  const { data: conta } = await sb().from("app_usuarios").select("id").eq("email", email).maybeSingle();
-  if (conta?.id) await sb().from("app_modulo_acesso").delete().eq("usuario_id", conta.id).eq("modulo_slug", "ranking");
-  return Response.json({ ok: true });
 }
