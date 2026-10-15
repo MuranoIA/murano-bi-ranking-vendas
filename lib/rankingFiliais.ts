@@ -18,6 +18,8 @@ export function lerFiliais(v: unknown): number[] | null {
   if (typeof v === "string") {
     try { arr = JSON.parse(v); } catch { arr = v.split(","); }
   }
+  // "3" e JSON valido (o numero 3), nao um array: sem isto uma filial so era ignorada
+  if (typeof arr === "number") arr = [arr];
   if (!Array.isArray(arr)) return null;
   const f = [...new Set(arr.map((x) => Number(x)).filter((x) => VALIDAS.includes(x)))].sort((a, b) => a - b);
   return f.length ? f : null;
