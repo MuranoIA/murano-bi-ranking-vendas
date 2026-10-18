@@ -7,7 +7,7 @@ export { normalizar, slugDe, slugCompleto } from "./slug";
 // Quem é vendedor de cada filial: quem lançou venda (padrão ou manifesto) nela nos últimos
 // DIAS dias, no faturamento do v2 — a mesma tabela que o ranking usa. Não há cadastro de
 // vendedor por filial; a venda é o que diz onde a pessoa trabalha. Guardado 10 min em memória.
-const V2_URL = "https://jjvbmqycgjgkwidgcmif.supabase.co";
+const V2_URL = "https://api-clientes.muranoprofessional.com.br";
 const DIAS = 45;
 const VALIDADE_MS = 10 * 60 * 1000;
 export type VendedorErp = { nome: string; rca: number | null; pedidos: number; ultima: string };
