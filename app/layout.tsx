@@ -15,7 +15,12 @@ export const viewport = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR" className={inter.className}>
+    <html lang="pt-BR" className={inter.className} suppressHydrationWarning>
+      <head>
+        {/* Dentro do iframe do hub (ou do Pulse/VendasPro), o <html> é marcado antes da primeira
+            pintura: o v2.css passa a rolagem para o <body> (barra presa no iPhone). */}
+        <script dangerouslySetInnerHTML={{ __html: "try{if(window.self!==window.top)document.documentElement.dataset.embutido='hub'}catch(e){document.documentElement.dataset.embutido='hub'}" }} />
+      </head>
       <body style={{ margin: 0 }}>{children}</body>
     </html>
   );
