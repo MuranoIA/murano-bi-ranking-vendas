@@ -13,10 +13,11 @@ import { PorDia } from "./PorDia";
 import { Filiais } from "./Filiais";
 import { Criterios } from "./Criterios";
 import { Consultores } from "./Consultores";
+import { Acessos } from "./Acessos";
 import { CHIP, CHIP_DESLIGADO, CHIP_LIGADO } from "../../componentes/estilo";
 import { escolherGrupo, filiaisDoGrupo, gruposPermitidos, rotuloDoGrupo, type Grupo } from "@/lib/grupo";
 
-type Aba = "ao-vivo" | "por-dia" | "foto" | "consultores" | "filiais" | "criterios" | "metas" | "tvs" | "musica";
+type Aba = "ao-vivo" | "por-dia" | "foto" | "consultores" | "filiais" | "criterios" | "metas" | "tvs" | "musica" | "acessos";
 
 // ---------------------------------------------------------------------------
 // A TELA DO RANKING. Mesmo esqueleto do admin novo: barra fina de marca, título
@@ -30,7 +31,8 @@ type Aba = "ao-vivo" | "por-dia" | "foto" | "consultores" | "filiais" | "criteri
 // (null = as duas), configurado no admin do hub (lib/escopo.ts) — a tela só mostra, quem recorta é o
 // servidor. Cada filial tem a sua configuração (lib/grupo.ts): o supervisor mexe só na dele; o
 // admin sem recorte escolhe no topo qual filial está configurando.
-export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: boolean; porDia: boolean; filiais: number[] | null; tema: TemaChat }) {
+// `superAdmin`: o único sem recorte de filial; ganha também a aba "Acessos" (quem vê o quê).
+export function Ranking({ admin, porDia, superAdmin, filiais, tema: temaInicial }: { admin: boolean; porDia: boolean; superAdmin: boolean; filiais: number[] | null; tema: TemaChat }) {
   const [tema, setTema] = useState<TemaChat>(temaInicial);
   // a aba mora no `#`: recarregar ou mandar o link abre na mesma seção. Lida só
   // depois de montar — o servidor não vê o `#`.
@@ -52,6 +54,7 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
           { k: "musica", rotulo: "Música" },
         ] as { k: Aba; rotulo: string }[])
       : []),
+    ...(superAdmin ? ([{ k: "acessos", rotulo: "Acessos" }] as { k: Aba; rotulo: string }[]) : []),
   ];
   useEffect(() => {
     const h = window.location.hash.slice(1) as Aba;
@@ -99,6 +102,13 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
           )
         )}
 
+        {filiais !== null && filiais.length === 0 && (
+          <p className="mt-4 rounded-lg bg-v2-superficie p-4 text-[13.5px] leading-5 ring-1 ring-inset ring-v2-linha-forte">
+            Você ainda não tem uma filial definida no Ranking. Peça a um administrador para marcar a sua
+            filial no hub (Ranking → Admin).
+          </p>
+        )}
+
         <div role="tablist" aria-label="Seções do ranking" className="mt-5 flex gap-2 overflow-x-auto pb-1">
           {ABAS.map((a) => (
             <button
@@ -124,7 +134,9 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
         {/* As seções ficam montadas e a aba só esconde: um envio de música em
             andamento roda NESTA página, e desmontar a seção o perderia. */}
         <div id="secao-ao-vivo" role="tabpanel" aria-labelledby="aba-ao-vivo" hidden={aba !== "ao-vivo"} className="mt-4">
-          <AoVivo porDia={config} filiais={grupo ? filiaisDoGrupo(grupo) : filiais} />
+          {filiais === null || filiais.length > 0 ? (
+            <AoVivo porDia={config} filiais={grupo ? filiaisDoGrupo(grupo) : filiais} />
+          ) : null}
         </div>
         <div id="secao-foto" role="tabpanel" aria-labelledby="aba-foto" hidden={aba !== "foto"} className="mt-4">
           <Foto key={grupo ?? "-"} grupo={config ? grupo : null} />
@@ -153,6 +165,11 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
               <Musica ativa={aba === "musica"} grupo={grupo} />
             </div>
           </>
+        )}
+        {superAdmin && (
+          <div id="secao-acessos" role="tabpanel" aria-labelledby="aba-acessos" hidden={aba !== "acessos"} className="mt-4">
+            <Acessos ativa={aba === "acessos"} />
+          </div>
         )}
       </main>
     </div>

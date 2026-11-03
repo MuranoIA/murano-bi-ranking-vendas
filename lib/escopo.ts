@@ -7,9 +7,8 @@ import { GRUPOS_FILIAL } from "./rankingFiliais";
 // chaveada por e-mail) quem é supervisor e quem é vendedor de cada filial:
 // Katiucia supervisora do Maranhão vê só o Maranhão; o Angelo, só Belém.
 //
-// Quem NÃO está na tabela continua como sempre foi: vê as duas filiais (os
-// admins do `acesso` do CRM, como o dono). Estar na tabela RECORTA — é o
-// que a configuração existe para fazer.
+// Só o super admin vê as duas (lib/acessoRanking.ts, pedido do dono 03/11/2026);
+// quem não está na tabela e não é super admin não vê filial nenhuma até ganhar uma.
 //
 //  - supervisor_<filial>: ganha o "Por dia" e as "Minhas filiais", só da filial;
 //  - vendedor_<filial>:   o ranking ao vivo da filial e a própria foto.
