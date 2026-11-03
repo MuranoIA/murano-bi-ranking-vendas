@@ -13,10 +13,11 @@ import { PorDia } from "./PorDia";
 import { Filiais } from "./Filiais";
 import { Criterios } from "./Criterios";
 import { Consultores } from "./Consultores";
+import { Acessos } from "./Acessos";
 import { CHIP, CHIP_DESLIGADO, CHIP_LIGADO } from "../../componentes/estilo";
 import { escolherGrupo, filiaisDoGrupo, gruposPermitidos, rotuloDoGrupo, type Grupo } from "@/lib/grupo";
 
-type Aba = "ao-vivo" | "por-dia" | "foto" | "consultores" | "filiais" | "criterios" | "metas" | "tvs" | "musica";
+type Aba = "ao-vivo" | "por-dia" | "foto" | "consultores" | "filiais" | "criterios" | "metas" | "tvs" | "musica" | "acessos";
 
 // ---------------------------------------------------------------------------
 // A TELA DO RANKING. Mesmo esqueleto do admin novo: barra fina de marca, título
@@ -30,7 +31,8 @@ type Aba = "ao-vivo" | "por-dia" | "foto" | "consultores" | "filiais" | "criteri
 // (null = as duas), configurado no admin do hub (lib/escopo.ts) — a tela só mostra, quem recorta é o
 // servidor. Cada filial tem a sua configuração (lib/grupo.ts): o supervisor mexe só na dele; o
 // admin sem recorte escolhe no topo qual filial está configurando.
-export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: boolean; porDia: boolean; filiais: number[] | null; tema: TemaChat }) {
+// `superAdmin`: o único sem recorte de filial; ganha também a aba "Acessos" (quem vê o quê).
+export function Ranking({ admin, porDia, superAdmin, filiais, tema: temaInicial }: { admin: boolean; porDia: boolean; superAdmin: boolean; filiais: number[] | null; tema: TemaChat }) {
   const [tema, setTema] = useState<TemaChat>(temaInicial);
   // a aba mora no `#`: recarregar ou mandar o link abre na mesma seção. Lida só
   // depois de montar — o servidor não vê o `#`.
@@ -52,6 +54,7 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
           { k: "musica", rotulo: "Música" },
         ] as { k: Aba; rotulo: string }[])
       : []),
+    ...(superAdmin ? ([{ k: "acessos", rotulo: "Acessos" }] as { k: Aba; rotulo: string }[]) : []),
   ];
   useEffect(() => {
     const h = window.location.hash.slice(1) as Aba;
@@ -162,6 +165,11 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
               <Musica ativa={aba === "musica"} grupo={grupo} />
             </div>
           </>
+        )}
+        {superAdmin && (
+          <div id="secao-acessos" role="tabpanel" aria-labelledby="aba-acessos" hidden={aba !== "acessos"} className="mt-4">
+            <Acessos ativa={aba === "acessos"} />
+          </div>
         )}
       </main>
     </div>

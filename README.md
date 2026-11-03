@@ -26,10 +26,10 @@ O admin do hub define em `/ranking/admin` (tabela `rk_papel`, migration 0189 do
 murano-app) quem é supervisor ou vendedor de Belém ou do Maranhão. No SSO a
 filial entra na sessão (`lib/escopo.ts`) e as rotas recortam por ela:
 supervisor de filial ganha "Por dia" e "Filiais" só da filial; vendedor, o ao
-vivo da filial e a foto. **Só o super admin vê as duas filiais** (hoje o Romulo;
-lista em `lib/acessoRanking.ts`, ou `RANKING_SUPER_ADMINS` separado por vírgula).
-Admin do `acesso` com filial em `rk_papel` configura só a dele; quem não é super
-admin e não tem filial não vê nenhuma até ganhar uma no hub. A cada abertura de
+vivo da filial e a foto. **Só o super admin vê as duas filiais.** O super admin
+configura tudo isso na aba **Acessos** do próprio Ranking (supervisor/vendedor
+gravam em `rk_papel`, super admin em bi_config `ranking_super_admins`; o Romulo
+é fixo). Quem não é super admin e não tem papel não vê filial nenhuma. A cada abertura de
 `/controle` o acesso é conferido de novo, então trocar a filial no hub vale na hora. O
 "Abrir o ranking" passa `?filiais=` ao painel. O painel das TVs e a edge
 function continuam públicos (as TVs não têm login).

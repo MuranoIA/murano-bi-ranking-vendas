@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { lerSessao, podeVerDia } from "@/lib/sessao";
+import { ehSuperAdminSessao, lerSessao, podeVerDia } from "@/lib/sessao";
 import { calcularAcesso, mesmoAcesso } from "@/lib/acessoRanking";
 import { entradaPeloHub } from "@/lib/hub";
 import { COOKIE_TEMA_CHAT, temaChatDe } from "@/lib/temaChat";
@@ -26,5 +26,5 @@ export default async function PaginaControle() {
   const agora = await calcularAcesso(sessao.email);
   if (!agora.ok || !mesmoAcesso(sessao, agora.acesso)) redirect(entradaPeloHub("/controle"));
   const tema = temaChatDe(cookies().get(COOKIE_TEMA_CHAT)?.value);
-  return <Ranking admin={sessao.admin} porDia={podeVerDia(sessao)} filiais={sessao.filiais} tema={tema} />;
+  return <Ranking admin={sessao.admin} porDia={podeVerDia(sessao)} superAdmin={ehSuperAdminSessao(sessao)} filiais={sessao.filiais} tema={tema} />;
 }

@@ -106,5 +106,8 @@ export const podeVerDia = (s: Sessao | null): boolean => s?.admin === true || s?
 /** Configura critério, metas, fotos, TVs e música — da filial dele, no caso do supervisor (lib/grupo.ts). */
 export const podeConfigurar = (s: Sessao | null): boolean => podeVerDia(s);
 
+/** Super admin (lib/acessoRanking.ts): o único sem recorte de filial. */
+export const ehSuperAdminSessao = (s: Sessao | null): boolean => s?.admin === true && s.filiais === null;
+
 /** O padrão das TVs vale para todas as filiais: só o super admin (sem recorte) mexe nele. */
 export const podeMudarTv = (s: Sessao | null): boolean => s?.admin === true && s.filiais === null;
