@@ -99,6 +99,13 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
           )
         )}
 
+        {filiais !== null && filiais.length === 0 && (
+          <p className="mt-4 rounded-lg bg-v2-superficie p-4 text-[13.5px] leading-5 ring-1 ring-inset ring-v2-linha-forte">
+            Você ainda não tem uma filial definida no Ranking. Peça a um administrador para marcar a sua
+            filial no hub (Ranking → Admin).
+          </p>
+        )}
+
         <div role="tablist" aria-label="Seções do ranking" className="mt-5 flex gap-2 overflow-x-auto pb-1">
           {ABAS.map((a) => (
             <button
@@ -124,7 +131,9 @@ export function Ranking({ admin, porDia, filiais, tema: temaInicial }: { admin: 
         {/* As seções ficam montadas e a aba só esconde: um envio de música em
             andamento roda NESTA página, e desmontar a seção o perderia. */}
         <div id="secao-ao-vivo" role="tabpanel" aria-labelledby="aba-ao-vivo" hidden={aba !== "ao-vivo"} className="mt-4">
-          <AoVivo porDia={config} filiais={grupo ? filiaisDoGrupo(grupo) : filiais} />
+          {filiais === null || filiais.length > 0 ? (
+            <AoVivo porDia={config} filiais={grupo ? filiaisDoGrupo(grupo) : filiais} />
+          ) : null}
         </div>
         <div id="secao-foto" role="tabpanel" aria-labelledby="aba-foto" hidden={aba !== "foto"} className="mt-4">
           <Foto key={grupo ?? "-"} grupo={config ? grupo : null} />

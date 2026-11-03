@@ -26,7 +26,7 @@ export type Sessao = {
   admin: boolean;
   /** slug do vendedor (`acesso.carteira`): de quem é a "Minha foto" */
   carteira: string | null;
-  /** filiais (codfilial) que a pessoa pode ver; null = todas (quem não está em `rk_papel`) */
+  /** filiais (codfilial) que a pessoa pode ver; null = todas (só o super admin); [] = nenhuma */
   filiais: number[] | null;
   /** supervisor de filial em `rk_papel`: ganha o "Por dia" da filial dele */
   supervisor: boolean;
@@ -36,7 +36,7 @@ export type Sessao = {
 // Sobe quando o conteúdo da sessão muda de sentido: cookie de versão antiga não
 // vale e a pessoa passa de novo pelo hub (sem isso, quem entrou antes do recorte
 // por filial ficaria vendo as duas até a sessão vencer).
-const VERSAO_SESSAO = 3;
+const VERSAO_SESSAO = 4; // 4: só o super admin vê tudo (lib/acessoRanking.ts)
 
 function segredo(): string {
   const s = process.env.RANKING_SESSAO_SECRET || process.env.RANKING_HUB_SSO_SECRET;
@@ -106,5 +106,5 @@ export const podeVerDia = (s: Sessao | null): boolean => s?.admin === true || s?
 /** Configura critério, metas, fotos, TVs e música — da filial dele, no caso do supervisor (lib/grupo.ts). */
 export const podeConfigurar = (s: Sessao | null): boolean => podeVerDia(s);
 
-/** O padrão das TVs vale para todas as filiais: só admin sem recorte de filial mexe nele. */
+/** O padrão das TVs vale para todas as filiais: só o super admin (sem recorte) mexe nele. */
 export const podeMudarTv = (s: Sessao | null): boolean => s?.admin === true && s.filiais === null;
