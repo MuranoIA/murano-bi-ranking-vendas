@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { filiaisDoPapel, lerPapelRanking } from "./escopo";
-import { slugDe } from "./vendedores";
+import { slugCompleto, slugDe } from "./vendedores";
+import { casarNoErp, vendedoresErp } from "./casarErp";
 import type { Sessao } from "./sessao";
 
 // ---------------------------------------------------------------------------
@@ -56,15 +57,29 @@ export async function calcularAcesso(emailBruto: string): Promise<ResultadoAcess
 
   const papeis: string[] = Array.isArray(ac?.papeis) ? ac!.papeis : [];
   const adminAcesso = ac?.papel === "admin" || papeis.includes("admin");
-  const papelRk = rk?.ativo === false ? null : lerPapelRanking(rk?.papel);
   const superAdmin = lerListaSuperAdmins(cfg?.valor).includes(email);
+  // rk_papel com ativo=false é "Sem acesso" dado pela aba Acessos: não ganha papel automático
+  const bloqueado = rk?.ativo === false;
+  let papelRk = bloqueado ? null : lerPapelRanking(rk?.papel);
+  const nome = rk?.nome || us?.nome || email.split("@")[0];
 
-  // Quem o admin do hub marcou como vendedor é consultor no Ranking, mesmo sem carteira no `acesso`
-  // (pedido do dono, 15/10/2026): o slug da foto é o 1º nome, como o ranking casa com o ERP.
+  // Vendedor (do rk_papel, ou sem papel nenhum): procura no ERP quem ele é. Sem papel e vendendo em
+  // UMA filial, vira vendedor dela sozinho (pedido do dono, 03/11/2026) — a aba Acessos muda ou bloqueia.
+  let doErp: { nome: string } | null = null;
+  if (!superAdmin && !bloqueado && (!papelRk || !papelRk.supervisor)) {
+    const achado = casarNoErp(nome, await vendedoresErp(papelRk ? [papelRk.grupo as "belem" | "maranhao"] : undefined));
+    if (achado) {
+      doErp = achado;
+      if (!papelRk) papelRk = { supervisor: false, grupo: achado.grupo };
+    }
+  }
+
+  // De quem é a "Minha foto": a carteira do `acesso`; senão o vendedor do ERP pelo nome completo (a
+  // chave da foto desde 15/10/2026, dois "Luis" não dividem foto); senão o 1º nome, como era.
   const carteira = typeof ac?.carteira === "string" && ac.carteira
     ? ac.carteira
     : papelRk && !papelRk.supervisor
-      ? slugDe(rk?.nome || us?.nome || email.split("@")[0]) || null
+      ? (doErp ? slugCompleto(doErp.nome) : slugDe(nome)) || null
       : null;
 
   if (superAdmin) return { ok: true, acesso: { email, admin: true, carteira, filiais: null, supervisor: false } };
@@ -87,5 +102,6 @@ export async function calcularAcesso(emailBruto: string): Promise<ResultadoAcess
 /** A sessão gravada ainda bate com o que o banco diz hoje? */
 export function mesmoAcesso(a: Acesso, b: Acesso): boolean {
   const f = (x: number[] | null) => (x === null ? "*" : [...x].sort().join(","));
-  return a.admin === b.admin && a.supervisor === b.supervisor && a.carteira === b.carteira && f(a.filiais) === f(b.filiais);
+  // a carteira fica de fora: depende do ERP responder, e não muda o que a pessoa VÊ
+  return a.admin === b.admin && a.supervisor === b.supervisor && f(a.filiais) === f(b.filiais);
 }

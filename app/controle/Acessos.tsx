@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { BOTAO_PRIMARIO, CAMPO, CARTAO, ROTULO, avisoDe } from "../../componentes/estilo";
 
 type Papel = "super_admin" | "supervisor_belem" | "supervisor_maranhao" | "vendedor_belem" | "vendedor_maranhao" | "nenhum";
-type Pessoa = { email: string; nome: string; papel: Papel; sugestao?: { papel: Papel; erp: string } | null };
+type Pessoa = { email: string; nome: string; papel: Papel; auto?: string | null };
 type Aviso = { ok: boolean; texto: string } | null;
 
 const PAPEIS: { v: Papel; rotulo: string; explica: string }[] = [
@@ -13,7 +13,7 @@ const PAPEIS: { v: Papel; rotulo: string; explica: string }[] = [
   { v: "supervisor_maranhao", rotulo: "Supervisor · Maranhão", explica: "Vê e configura só o Maranhão." },
   { v: "vendedor_belem", rotulo: "Vendedor · Belém", explica: "Vê o ranking ao vivo de Belém e cuida da própria foto." },
   { v: "vendedor_maranhao", rotulo: "Vendedor · Maranhão", explica: "Vê o ranking ao vivo do Maranhão e cuida da própria foto." },
-  { v: "nenhum", rotulo: "Sem acesso", explica: "Não vê filial nenhuma no Ranking." },
+  { v: "nenhum", rotulo: "Sem acesso", explica: "Não vê filial nenhuma no Ranking. Quem vende no ERP e não tem papel vira vendedor da filial automaticamente; \"Sem acesso\" bloqueia isso." },
 ];
 const rotulo = (p: Papel) => PAPEIS.find((x) => x.v === p)?.rotulo ?? p;
 
@@ -49,7 +49,7 @@ export function Acessos({ ativa }: { ativa: boolean }) {
       if (!r.ok) throw new Error(j?.error ?? `erro ${r.status}`);
       setLista((l) => {
         const atual = l ?? [];
-        if (atual.some((p) => p.email === email)) return atual.map((p) => (p.email === email ? { ...p, papel, sugestao: null } : p));
+        if (atual.some((p) => p.email === email)) return atual.map((p) => (p.email === email ? { ...p, papel, auto: null } : p));
         return [...atual, { email, nome: nome || email.split("@")[0], papel }].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
       });
       setAviso({ ok: true, texto: `${nome || email}: ${rotulo(papel)}. Vale na próxima vez que a pessoa abrir o Ranking.` });
@@ -70,7 +70,7 @@ export function Acessos({ ativa }: { ativa: boolean }) {
   if (!jaAbriu) return null;
   const t = busca.trim().toLowerCase();
   const visiveis = (lista ?? []).filter((p) => !t || p.nome.toLowerCase().includes(t) || p.email.includes(t) || rotulo(p.papel).toLowerCase().includes(t));
-  const sugeridos = (lista ?? []).filter((p) => p.sugestao).length;
+  const automaticos = (lista ?? []).filter((p) => p.auto).length;
   const conta = (p: Papel) => (lista ?? []).filter((x) => x.papel === p).length;
 
   return (
@@ -93,7 +93,7 @@ export function Acessos({ ativa }: { ativa: boolean }) {
           <p className="mt-2 text-[12.5px] text-v2-tinta-fraca">
             {conta("super_admin")} super admin · {conta("supervisor_belem") + conta("supervisor_maranhao")} supervisores ·{" "}
             {conta("vendedor_belem") + conta("vendedor_maranhao")} vendedores · {conta("nenhum")} sem acesso
-            {sugeridos > 0 && <> · <b className="text-v2-tinta">{sugeridos} sem acesso que venderam no ERP</b> (veja a sugestão)</>}
+            {automaticos > 0 && <> · {automaticos} vendedor{automaticos === 1 ? "" : "es"} automático{automaticos === 1 ? "" : "s"} pelo ERP</>}
           </p>
         )}
         <div className="mt-2 divide-y divide-v2-linha">
@@ -109,11 +109,8 @@ export function Acessos({ ativa }: { ativa: boolean }) {
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[14px] font-semibold">{p.nome}</div>
                     <div className="truncate text-[12px] text-v2-tinta-fraca">{p.email}</div>
-                    {p.sugestao && (
-                      <button type="button" disabled={ocupado !== null} onClick={() => trocar(p.email, p.sugestao!.papel, p.nome)} data-ripple
-                        className="mt-1 text-left text-[12.5px] font-semibold text-v2-azul underline-offset-2 hover:underline disabled:opacity-50">
-                        Sugestão: {rotulo(p.sugestao.papel)} — vendeu como {p.sugestao.erp} nos últimos 45 dias. Aplicar
-                      </button>
+                    {p.auto && (
+                      <div className="mt-0.5 text-[12px] text-v2-tinta-fraca">Automático: vendeu no ERP como {p.auto}. Escolha um papel para fixar outro.</div>
                     )}
                   </div>
                   <select

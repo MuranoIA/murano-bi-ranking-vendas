@@ -1,7 +1,6 @@
 import { sb } from "@/lib/config";
 import { ehSuperAdminSessao, lerSessao } from "@/lib/sessao";
-import { normalizar, vendedoresDetalhados } from "@/lib/vendedores";
-import type { Grupo } from "@/lib/grupo";
+import { casarNoErp, vendedoresErp } from "@/lib/casarErp";
 import { CHAVE_SUPER_ADMINS, SUPER_ADMIN_FIXO, lerListaSuperAdmins } from "@/lib/acessoRanking";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +10,7 @@ export const dynamic = "force-dynamic";
 //  GET                       as pessoas do hub (app_usuarios ativos + quem já tem papel) com o papel de cada uma
 //  PATCH { email, papel }    papel = super_admin | supervisor_belem | supervisor_maranhao |
 //                            vendedor_belem | vendedor_maranhao | nenhum
-// Supervisor e vendedor ficam em `rk_papel` (a mesma tabela do `/ranking/admin` do hub, então os dois
+// "Sem acesso" é a linha de rk_papel com ativo=false. Supervisor e vendedor ficam em `rk_papel` (a mesma tabela do `/ranking/admin` do hub, então os dois
 // lugares mostram a mesma coisa); super admin fica em bi_config `ranking_super_admins`.
 // Vale na próxima vez que a pessoa abrir a tela (app/controle confere o acesso a cada abertura).
 const PAPEIS_RK = ["supervisor_belem", "supervisor_maranhao", "vendedor_belem", "vendedor_maranhao"] as const;
@@ -23,25 +22,6 @@ function quemGere() {
   if (!sessao) return { erro: Response.json({ error: "não autenticado" }, { status: 401 }) };
   if (!ehSuperAdminSessao(sessao)) return { erro: Response.json({ error: "Só o super admin configura os acessos." }, { status: 403 }) };
   return { sessao };
-}
-
-// SUGESTÃO pela venda: quem não tem papel mas vendeu numa filial nos últimos 45 dias (faturamento
-// do ERP). O nome do hub ("Andre de Souza") e o do ERP ("ANDRE DE SOUSA BARROSO") nem sempre batem,
-// então é só sugestão — o super admin confirma. Casa o 1º nome e, se o hub tiver sobrenome, o
-// começo (4 letras) de algum sobrenome; só sugere quando há UMA pessoa do ERP compatível.
-type Sugestao = { papel: Papel; erp: string };
-function sugerir(nome: string, erp: { grupo: Grupo; nome: string }[]): Sugestao | null {
-  const [primeiro, ...resto] = normalizar(nome).split(" ").filter(Boolean);
-  if (!primeiro) return null;
-  const achados = erp.filter((v) => {
-    const [p, ...sob] = normalizar(v.nome).split(" ");
-    if (p !== primeiro) return false;
-    return resto.length === 0 || resto.some((r) => sob.some((x) => x.slice(0, 4) === r.slice(0, 4)));
-  });
-  const nomes = new Set(achados.map((a) => a.nome.toUpperCase()));
-  const grupos = new Set(achados.map((a) => a.grupo));
-  if (nomes.size !== 1 || grupos.size !== 1) return null;
-  return { papel: `vendedor_${achados[0].grupo}` as Papel, erp: achados[0].nome };
 }
 
 async function lerSuperAdmins(): Promise<string[]> {
@@ -78,13 +58,15 @@ export async function GET() {
       p.papel = "super_admin";
       pessoas.set(email, p);
     }
-    // a venda do ERP só para sugerir; se o ERP não responder, a tela funciona sem a sugestão
-    const erp: { grupo: Grupo; nome: string }[] = [];
-    await Promise.all((["belem", "maranhao"] as Grupo[]).map(async (g) => {
-      try { for (const v of await vendedoresDetalhados(g)) erp.push({ grupo: g, nome: v.nome }); } catch { /* sem sugestão */ }
-    }));
+    // Sem papel nenhum e vendendo no ERP em uma filial: já é vendedor dela automaticamente
+    // (lib/acessoRanking.ts). A tela mostra isso; escolher um papel fixa, "Sem acesso" bloqueia.
+    const erp = await vendedoresErp();
+    const bloqueados = new Set((rk ?? []).filter((r) => r.ativo === false).map((r) => String(r.email).trim().toLowerCase()));
     const lista = [...pessoas.values()]
-      .map((p) => ({ ...p, sugestao: p.papel === "nenhum" ? sugerir(p.nome, erp) : null }))
+      .map((p) => {
+        const achado = p.papel === "nenhum" && !bloqueados.has(p.email) ? casarNoErp(p.nome, erp) : null;
+        return achado ? { ...p, papel: `vendedor_${achado.grupo}` as Papel, auto: achado.nome } : { ...p, auto: null };
+      })
       .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
     return Response.json({ pessoas: lista, fixo: SUPER_ADMIN_FIXO, eu: q.sessao.email });
   } catch (e: any) {
@@ -111,8 +93,13 @@ export async function PATCH(req: Request) {
         .upsert({ chave: CHAVE_SUPER_ADMINS, valor: JSON.stringify(novaLista.sort()), atualizado_em: new Date().toISOString() }, { onConflict: "chave" });
       if (error) throw new Error(error.message);
     }
-    if (papel === "super_admin" || papel === "nenhum") {
+    if (papel === "super_admin") {
       const { error } = await c.from("rk_papel").delete().eq("email", email);
+      if (error) throw new Error(error.message);
+    } else if (papel === "nenhum") {
+      // fica a linha com ativo=false: sem ela a pessoa voltaria a ser vendedor automático pelo ERP
+      const { data: atual } = await c.from("rk_papel").select("papel").eq("email", email).maybeSingle();
+      const { error } = await c.from("rk_papel").upsert({ email, papel: atual?.papel ?? "vendedor_belem", ativo: false }, { onConflict: "email" });
       if (error) throw new Error(error.message);
     } else {
       const { error } = await c.from("rk_papel").upsert({ email, papel, ativo: true }, { onConflict: "email" });

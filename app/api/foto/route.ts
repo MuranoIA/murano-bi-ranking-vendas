@@ -58,7 +58,12 @@ export async function GET(req: Request) {
   }
   const slug = pedido || (await slugDoVendedor());
   if (!slug) return Response.json({ slug: null, url: null });
-  const { data } = await sb().from("bi_fotos_ranking").select("url,atualizado_em").eq("slug", slug).maybeSingle();
+  let { data } = await sb().from("bi_fotos_ranking").select("url,atualizado_em").eq("slug", slug).maybeSingle();
+  // a PRÓPRIA foto: quem passou a ter a chave pelo nome completo do ERP (lib/acessoRanking.ts) ainda vê a
+  // foto antiga, do 1º nome — é a que a TV mostra até ele mandar outra (a edge function faz o mesmo)
+  if (!data && !pedido && slug.includes("-")) {
+    ({ data } = await sb().from("bi_fotos_ranking").select("url,atualizado_em").eq("slug", slug.split("-")[0]).maybeSingle());
+  }
   return Response.json({ slug, url: data?.url ?? null, atualizado_em: data?.atualizado_em ?? null });
 }
 
