@@ -540,7 +540,7 @@
   // ou um trecho de um vídeo do YouTube. A lista vem da rota pública do próprio Ranking
   // (/api/ranking/musicas-vendedores), pelo mesmo slug da foto: nome completo do ERP e, sem ele,
   // o 1º nome. Sem música própria, vale a da filial (MUSICA) e, sem ela, o som sintetizado.
-  // YouTube: o player fica ESCONDIDO (transparente, atrás da tela) — só o som sai. Se em 6 s ele não
+  // YouTube: o player fica ESCONDIDO (transparente, atrás da tela) — só o som sai. Se em 10 s ele não
   // começar a tocar (vídeo que não deixa incorporar, TV sem rede para o YouTube, autoplay bloqueado),
   // cai na música da filial.
   var MUSICAS_VEND = {};
@@ -560,12 +560,18 @@
     return MUSICAS_VEND[c] || MUSICAS_VEND[p] || null;
   }
 
-  var _ytApi = false, _ytPronto = false, _ytPlayer = null, _ytTimer = null, _ytFade = null, _ytVigia = null, _ytVez = 0;
+  // O player é UM SÓ, criado assim que a lista traz alguma música do YouTube (não na hora da venda:
+  // carregar o player leva segundos). Na venda, só troca o vídeo. 10 s para começar a tocar; se não
+  // começar, toca a da filial — e o motivo vai para o diagnóstico (diagYt), que mostra no banco por que
+  // o YouTube não tocou em cada TV (vídeo que não deixa incorporar, autoplay bloqueado, sem rede).
+  var _ytApi = false, _ytPlayer = null, _ytPronto = false, _ytTimer = null, _ytFade = null, _ytVigia = null, _ytVez = 0;
+  var _ytEstados = [];
   function carregarApiYt() {
     if (_ytApi) return; _ytApi = true;
     var antes = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = function () { _ytPronto = true; try { antes && antes(); } catch (e) {} };
+    window.onYouTubeIframeAPIReady = function () { try { criarPlayerYt(); } catch (e) {} try { antes && antes(); } catch (e) {} };
     var sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; sc.async = true;
+    sc.onerror = function () { diagYt('api-nao-carregou', null); };
     document.head.appendChild(sc);
   }
   function caixaYt() {
@@ -579,22 +585,45 @@
     box.appendChild(alvo); document.body.appendChild(box);
     return box;
   }
+  function criarPlayerYt() {
+    if (_ytPlayer) return;
+    caixaYt();
+    _ytPlayer = new YT.Player('ytMusicaPlayer', {
+      width: 200, height: 200,
+      playerVars: { autoplay: 0, controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1 },
+      events: {
+        onReady: function () { _ytPronto = true; },
+        onStateChange: function (e) { _ytEstados.push(e.data); if (e.data === 1 && window._ytComecou) window._ytComecou(); },
+        onError: function (e) { if (window._ytFalhou) window._ytFalhou('erro-' + e.data); }
+      }
+    });
+  }
+  // Para o diagnóstico: o painel está aberto sozinho (TV) ou dentro de um quadro (hub, Pulse)?
+  function ondeAberto() { try { return window.top === window.self ? 'sozinho' : 'dentro-de-quadro'; } catch (e) { return 'dentro-de-quadro'; } }
+  function diagYt(motivo, video) {
+    try {
+      fetch('/api/ranking/musicas-vendedores', { method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ diag: motivo, video: video, onde: ondeAberto(), estados: _ytEstados.slice(-8).join(',') }) });
+    } catch (e) {}
+  }
   function pararYt() {
     _ytVez++;
     try { if (_ytTimer) { clearTimeout(_ytTimer); _ytTimer = null; } } catch (e) {}
     try { if (_ytFade) { clearInterval(_ytFade); _ytFade = null; } } catch (e) {}
     try { if (_ytVigia) { clearTimeout(_ytVigia); _ytVigia = null; } } catch (e) {}
-    try { if (_ytPlayer && _ytPlayer.stopVideo) _ytPlayer.stopVideo(); } catch (e) {}
+    try { if (_ytPlayer && _ytPlayer.stopVideo && _ytPronto) _ytPlayer.stopVideo(); } catch (e) {}
   }
   // Toca o trecho do YouTube; `seFalhar` roda quando ele não começa a tocar a tempo.
   function tocarYt(m, seFalhar) {
-    if (!window.YT || !window.YT.Player || !_ytPronto) { carregarApiYt(); return false; }
+    if (!_ytPlayer || !_ytPronto) { carregarApiYt(); diagYt('player-nao-pronto', m.video); return false; }
     pararMusica();
     var vez = _ytVez, ini = Math.max(0, Number(m.inicio) || 0), seg = Math.max(1, Number(m.segundos) || 20);
     var tocou = false;
-    function comecou() {
+    _ytEstados = [];
+    window._ytComecou = function () {
       if (tocou || vez !== _ytVez) return; tocou = true;
       if (_ytVigia) { clearTimeout(_ytVigia); _ytVigia = null; }
+      diagYt('tocou', m.video);
       _ytTimer = setTimeout(function () { // teto do trecho, com fade curto como o <audio>
         var i = 0;
         _ytFade = setInterval(function () {
@@ -603,28 +632,18 @@
           if (i >= 16) pararYt();
         }, 50);
       }, seg * 1000);
-    }
-    function falhou() { if (tocou || vez !== _ytVez) return; pararYt(); try { seFalhar && seFalhar(); } catch (e) {} }
-    // o player é um só (criado na 1ª venda e reaproveitado); os eventos dele chamam a vez atual
-    window._ytComecou = comecou; window._ytFalhou = falhou;
-    var params = { videoId: m.video, startSeconds: ini, endSeconds: ini + seg + 1 };
+    };
+    window._ytFalhou = function (motivo) {
+      if (tocou || vez !== _ytVez) return;
+      diagYt(motivo || 'nao-comecou', m.video);
+      pararYt();
+      try { seFalhar && seFalhar(); } catch (e) {}
+    };
     try {
-      if (_ytPlayer && _ytPlayer.loadVideoById) {
-        _ytPlayer.setVolume(100); _ytPlayer.unMute(); _ytPlayer.loadVideoById(params);
-      } else {
-        caixaYt();
-        _ytPlayer = new YT.Player('ytMusicaPlayer', {
-          width: 200, height: 200, videoId: m.video,
-          playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1, start: Math.floor(ini), end: Math.ceil(ini + seg + 1) },
-          events: {
-            onReady: function (e) { try { e.target.setVolume(100); e.target.unMute(); e.target.playVideo(); } catch (er) {} },
-            onStateChange: function (e) { if (e.data === 1 && window._ytComecou) window._ytComecou(); },
-            onError: function () { if (window._ytFalhou) window._ytFalhou(); }
-          }
-        });
-      }
-    } catch (e) { return false; }
-    _ytVigia = setTimeout(falhou, 6000);
+      _ytPlayer.setVolume(100); _ytPlayer.unMute();
+      _ytPlayer.loadVideoById({ videoId: m.video, startSeconds: ini, endSeconds: ini + seg + 1 });
+    } catch (e) { diagYt('erro-ao-tocar', m.video); return false; }
+    _ytVigia = setTimeout(function () { window._ytFalhou('nao-comecou-10s'); }, 10000);
     return true;
   }
   // Na venda: a música do consultor, se ele escolheu uma. false = não tem (o chamador segue).
