@@ -6,6 +6,7 @@ import { SeletorTema } from "../../componentes/SeletorTema";
 import type { TemaChat } from "@/lib/temaChat";
 import { AoVivo } from "./AoVivo";
 import { Foto } from "./Foto";
+import { MinhaMusica } from "./MinhaMusica";
 import { Metas } from "./Metas";
 import { Tvs } from "./Tvs";
 import { Musica } from "./Musica";
@@ -43,7 +44,7 @@ export function Ranking({ admin, porDia, superAdmin, filiais, tema: temaInicial 
   const ABAS: { k: Aba; rotulo: string }[] = [
     { k: "ao-vivo", rotulo: "Ao vivo" },
     ...(config ? ([{ k: "por-dia", rotulo: "Por dia" }] as { k: Aba; rotulo: string }[]) : []),
-    { k: "foto", rotulo: "Minha foto" },
+    { k: "foto", rotulo: "Minha foto e música" },
     ...(config
       ? ([
           { k: "consultores", rotulo: "Consultores" },
@@ -83,7 +84,7 @@ export function Ranking({ admin, porDia, superAdmin, filiais, tema: temaInicial 
         <p className="mt-1 max-w-2xl text-[14px] leading-5 text-v2-tinta-fraca">
           {config
             ? "O painel das TVs e tudo o que o controla: ranking de qualquer dia, consultores, fotos, critério, metas, desfile e a música dos parabéns — de cada filial."
-            : "O painel de vendas ao vivo e a sua foto, que aparece ao lado do seu nome."}
+            : "O painel de vendas ao vivo, a sua foto, que aparece ao lado do seu nome, e a música que toca quando você vende."}
         </p>
 
         {config && grupo && (
@@ -140,6 +141,7 @@ export function Ranking({ admin, porDia, superAdmin, filiais, tema: temaInicial 
         </div>
         <div id="secao-foto" role="tabpanel" aria-labelledby="aba-foto" hidden={aba !== "foto"} className="mt-4">
           <Foto key={grupo ?? "-"} grupo={config ? grupo : null} />
+          <div className="mt-4"><MinhaMusica /></div>
         </div>
         {config && grupo && (
           <>

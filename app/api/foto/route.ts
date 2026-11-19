@@ -1,7 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { lerSessao, podeConfigurar, type Sessao } from "@/lib/sessao";
-import { escolherGrupo } from "@/lib/grupo";
-import { slugsDoGrupo } from "@/lib/vendedores";
+import { lerSessao } from "@/lib/sessao";
+import { podeMexerEm, slugDoVendedor } from "@/lib/alvoConsultor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -19,32 +18,6 @@ function sb() {
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("Supabase envs ausentes");
   return createClient(url, key, { auth: { persistSession: false } });
-}
-
-// slug do vendedor logado: carteira da sessão; senão, e-mail -> acesso.carteira.
-async function slugDoVendedor(): Promise<string | null> {
-  const sessao = lerSessao();
-  if (!sessao) return null;
-  if (sessao.carteira) return sessao.carteira;
-  const { data } = await sb().from("acesso").select("carteira").eq("email", sessao.email).maybeSingle();
-  return (data?.carteira as string) ?? null;
-}
-
-const SLUG_OK = /^[a-z0-9-]{1,80}$/;
-
-// Pode mexer na foto de `slug`? A própria sempre; a de outro, admin ou supervisor da filial do consultor.
-async function podeMexerEm(sessao: Sessao, slug: string, grupoPedido: string | null): Promise<Response | null> {
-  if (!SLUG_OK.test(slug)) return Response.json({ error: "consultor inválido" }, { status: 400 });
-  if (slug === (await slugDoVendedor())) return null;
-  if (!podeConfigurar(sessao)) return Response.json({ error: "Só o administrador ou o supervisor troca a foto de outro consultor." }, { status: 403 });
-  if (!sessao.filiais) return null; // admin sem recorte: qualquer consultor
-  const grupo = escolherGrupo(grupoPedido, sessao.filiais);
-  try {
-    if (grupo && (await slugsDoGrupo(grupo)).has(slug)) return null;
-  } catch (e: any) {
-    return Response.json({ error: "Não foi possível conferir os vendedores da filial: " + (e?.message ?? e) }, { status: 502 });
-  }
-  return Response.json({ error: "Esse consultor não é da sua filial." }, { status: 403 });
 }
 
 export async function GET(req: Request) {

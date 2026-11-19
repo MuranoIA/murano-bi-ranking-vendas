@@ -489,14 +489,19 @@
   // (A versão anterior era `async`, então o `if (!played)` do fallback nunca
   // disparava — Promise pendente é sempre truthy — e a TV ficava muda quando o
   // arquivo não existia.)
-  function tocarMusica() {
+  // `m`: a música a tocar (sem ela, a da filial). A música própria de arquivo não recortado traz
+  // `inicio`: o trecho começa ali.
+  function tocarMusica(m) {
     try {
-      if (!MUSICA || !MUSICA.url) return false;
-      var segundos = Number(MUSICA.segundos) || MUSICA_SEG_PADRAO;
+      m = m || MUSICA;
+      if (!m || !m.url) return false;
+      var segundos = Number(m.segundos) || MUSICA_SEG_PADRAO;
       pararMusica();
       var el = document.createElement('audio');   // <audio> mesmo quando a URL é .mp4:
       el.id = 'celebraAudio';                     // ignora a trilha de vídeo do container
-      el.src = MUSICA.url; el.preload = 'auto'; el.loop = false; el.volume = 1;
+      el.src = m.url; el.preload = 'auto'; el.loop = false; el.volume = 1;
+      var ini = (m.cortado === false && Number(m.inicio) > 0) ? Number(m.inicio) : 0;
+      if (ini) { try { el.currentTime = ini; } catch (e) {} el.addEventListener('loadedmetadata', function () { try { if (el.currentTime < ini) el.currentTime = ini; } catch (e) {} }); }
       document.body.appendChild(el); _celebraMediaEl = el;
 
       var p = el.play();
@@ -526,7 +531,108 @@
     try { if (_musicaTimer) { clearTimeout(_musicaTimer); _musicaTimer = null; } } catch (e) {}
     try { if (_musicaFade) { clearInterval(_musicaFade); _musicaFade = null; } } catch (e) {}
     try { if (_celebraMediaEl) { _celebraMediaEl.pause(); _celebraMediaEl.remove(); _celebraMediaEl = null; } } catch (e) {}
+    pararYt();
     hideActivateButton();
+  }
+
+  // --- Música PRÓPRIA do consultor (aba "Minha foto e música" do controle) --------------------
+  // Cada consultor pode escolher a música que toca quando ELE vende: um arquivo (como a da filial)
+  // ou um trecho de um vídeo do YouTube. A lista vem da rota pública do próprio Ranking
+  // (/api/ranking/musicas-vendedores), pelo mesmo slug da foto: nome completo do ERP e, sem ele,
+  // o 1º nome. Sem música própria, vale a da filial (MUSICA) e, sem ela, o som sintetizado.
+  // YouTube: o player fica ESCONDIDO (transparente, atrás da tela) — só o som sai. Se em 6 s ele não
+  // começar a tocar (vídeo que não deixa incorporar, TV sem rede para o YouTube, autoplay bloqueado),
+  // cai na música da filial.
+  var MUSICAS_VEND = {};
+  function carregarMusicasVend() {
+    fetch('/api/ranking/musicas-vendedores', { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.musicas) return;
+        MUSICAS_VEND = d.musicas;
+        for (var k in MUSICAS_VEND) if (MUSICAS_VEND[k].tipo === 'youtube') { carregarApiYt(); break; }
+      })
+      .catch(function () { /* sem a lista, toca a música da filial */ });
+  }
+  function slugCompletoJs(nome) { return normNome(nome).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80); }
+  function musicaDoVendedor(nome) {
+    var c = slugCompletoJs(nome), p = normNome(nome).trim().split(/\s+/)[0] || '';
+    return MUSICAS_VEND[c] || MUSICAS_VEND[p] || null;
+  }
+
+  var _ytApi = false, _ytPronto = false, _ytPlayer = null, _ytTimer = null, _ytFade = null, _ytVigia = null, _ytVez = 0;
+  function carregarApiYt() {
+    if (_ytApi) return; _ytApi = true;
+    var antes = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = function () { _ytPronto = true; try { antes && antes(); } catch (e) {} };
+    var sc = document.createElement('script'); sc.src = 'https://www.youtube.com/iframe_api'; sc.async = true;
+    document.head.appendChild(sc);
+  }
+  function caixaYt() {
+    var box = document.getElementById('ytMusica');
+    if (box) return box;
+    box = document.createElement('div');
+    box.id = 'ytMusica';
+    // 200x200 (o mínimo do player) transparente e atrás de tudo: o vídeo nunca aparece na TV
+    box.style.cssText = 'position:fixed;right:0;bottom:0;width:200px;height:200px;opacity:0;pointer-events:none;z-index:-1;overflow:hidden';
+    var alvo = document.createElement('div'); alvo.id = 'ytMusicaPlayer';
+    box.appendChild(alvo); document.body.appendChild(box);
+    return box;
+  }
+  function pararYt() {
+    _ytVez++;
+    try { if (_ytTimer) { clearTimeout(_ytTimer); _ytTimer = null; } } catch (e) {}
+    try { if (_ytFade) { clearInterval(_ytFade); _ytFade = null; } } catch (e) {}
+    try { if (_ytVigia) { clearTimeout(_ytVigia); _ytVigia = null; } } catch (e) {}
+    try { if (_ytPlayer && _ytPlayer.stopVideo) _ytPlayer.stopVideo(); } catch (e) {}
+  }
+  // Toca o trecho do YouTube; `seFalhar` roda quando ele não começa a tocar a tempo.
+  function tocarYt(m, seFalhar) {
+    if (!window.YT || !window.YT.Player || !_ytPronto) { carregarApiYt(); return false; }
+    pararMusica();
+    var vez = _ytVez, ini = Math.max(0, Number(m.inicio) || 0), seg = Math.max(1, Number(m.segundos) || 20);
+    var tocou = false;
+    function comecou() {
+      if (tocou || vez !== _ytVez) return; tocou = true;
+      if (_ytVigia) { clearTimeout(_ytVigia); _ytVigia = null; }
+      _ytTimer = setTimeout(function () { // teto do trecho, com fade curto como o <audio>
+        var i = 0;
+        _ytFade = setInterval(function () {
+          i++;
+          try { _ytPlayer.setVolume(Math.max(0, 100 * (1 - i / 16))); } catch (e) {}
+          if (i >= 16) pararYt();
+        }, 50);
+      }, seg * 1000);
+    }
+    function falhou() { if (tocou || vez !== _ytVez) return; pararYt(); try { seFalhar && seFalhar(); } catch (e) {} }
+    // o player é um só (criado na 1ª venda e reaproveitado); os eventos dele chamam a vez atual
+    window._ytComecou = comecou; window._ytFalhou = falhou;
+    var params = { videoId: m.video, startSeconds: ini, endSeconds: ini + seg + 1 };
+    try {
+      if (_ytPlayer && _ytPlayer.loadVideoById) {
+        _ytPlayer.setVolume(100); _ytPlayer.unMute(); _ytPlayer.loadVideoById(params);
+      } else {
+        caixaYt();
+        _ytPlayer = new YT.Player('ytMusicaPlayer', {
+          width: 200, height: 200, videoId: m.video,
+          playerVars: { autoplay: 1, controls: 0, disablekb: 1, fs: 0, rel: 0, playsinline: 1, start: Math.floor(ini), end: Math.ceil(ini + seg + 1) },
+          events: {
+            onReady: function (e) { try { e.target.setVolume(100); e.target.unMute(); e.target.playVideo(); } catch (er) {} },
+            onStateChange: function (e) { if (e.data === 1 && window._ytComecou) window._ytComecou(); },
+            onError: function () { if (window._ytFalhou) window._ytFalhou(); }
+          }
+        });
+      }
+    } catch (e) { return false; }
+    _ytVigia = setTimeout(falhou, 6000);
+    return true;
+  }
+  // Na venda: a música do consultor, se ele escolheu uma. false = não tem (o chamador segue).
+  function tocarMusicaVendedor(nome, seFalhar) {
+    var m = musicaDoVendedor(nome);
+    if (!m) return false;
+    if (m.tipo === 'youtube') return tocarYt(m, seFalhar);
+    return tocarMusica(m);
   }
 
   // ---- Fotos dos vendedores ----------------------------------------------------
@@ -959,10 +1065,9 @@
       var _prm = titleCase(info.nome).split(' ')[0];
       setTimeout(function () {
         try {
-          // música do CRM quando houver; senão, o som sintetizado de sempre
-          if (!tocarMusica()) {
-            if (info.metaBatida) tocarPagode(); else tocarSamba();
-          }
+          // venda: a música do consultor; senão a da filial; senão o som sintetizado de sempre
+          var semMusica = function () { if (!tocarMusica()) { if (info.metaBatida) tocarPagode(); else tocarSamba(); } };
+          if (info.metaBatida || !tocarMusicaVendedor(info.nome, semMusica)) semMusica();
           falarParabens(_prm);
         } catch (e) {}
       }, 0);
@@ -1106,9 +1211,10 @@
   setTimeout(function () { location.reload(); }, 24 * 60 * 60 * 1000);
 
   load();
+  carregarMusicasVend();
   if (desfileMode) rodarDesfile(); // ?desfile=1 dispara o desfile na abertura
   if (!diaSel) {
-    setInterval(function () { if (!diaSel && !desfilando) load(); }, 60000); // ao vivo (hoje)
+    setInterval(function () { if (!diaSel && !desfilando) { load(); carregarMusicasVend(); } }, 60000); // ao vivo (hoje) e as músicas dos consultores
     pollComando();                       // escuta o comando de desfile do CRM
     setInterval(pollComando, 6000);
   }

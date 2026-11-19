@@ -30,7 +30,8 @@ function ehVideo(file: File) {
 // Decodifica -> corta -> mono -> fade. Devolve null quando o navegador não sabe
 // decodificar o arquivo (codec fora do que ele suporta); nesse caso o chamador
 // sobe o original e o painel corta na hora de tocar.
-export async function prepararTrecho(file: File, inicioSeg = 0): Promise<TrechoPronto | null> {
+// `duracaoSeg`: quanto do trecho fica (a música própria do consultor usa o trecho que ele marcou).
+export async function prepararTrecho(file: File, inicioSeg = 0, duracaoSeg = SEGUNDOS_PARABENS): Promise<TrechoPronto | null> {
   const AC: typeof AudioContext | undefined =
     (window as any).AudioContext || (window as any).webkitAudioContext;
   if (!AC) return null;
@@ -49,7 +50,7 @@ export async function prepararTrecho(file: File, inicioSeg = 0): Promise<TrechoP
     const sr = buf.sampleRate;
     const inicio = Math.max(0, Math.min(inicioSeg, Math.max(0, buf.duration - 1)));
     const de = Math.floor(inicio * sr);
-    const quantas = Math.min(buf.length - de, Math.floor(SEGUNDOS_PARABENS * sr));
+    const quantas = Math.min(buf.length - de, Math.floor(Math.max(1, duracaoSeg) * sr));
     if (quantas <= 0) return null;
 
     // mistura os canais em mono (metade do tamanho; TV de parede é mono na prática)
