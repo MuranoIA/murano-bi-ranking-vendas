@@ -23,6 +23,29 @@ export async function GET() {
   return Response.json({ musicas }, { headers: CORS });
 }
 
+// DIAGNÓSTICO do YouTube nas TVs: cada vez que o painel tenta tocar uma música do YouTube, conta como
+// foi (tocou, erro-150 = o vídeo não deixa incorporar, nao-comecou-10s = autoplay bloqueado ou rede,
+// player-nao-pronto...). Guarda as 30 últimas em bi_config.musica_vendedor_diag, para ver no banco por
+// que não tocou numa TV, sem precisar abrir o console dela. Público como o GET (a TV não tem login):
+// só aceita valores curtos e de formato conhecido, e não grava nada além disso.
+const CHAVE_DIAG = "musica_vendedor_diag";
+export async function POST(req: Request) {
+  const b = (await req.json().catch(() => null)) as Record<string, unknown> | null;
+  const motivo = String(b?.diag ?? "");
+  if (!/^[a-z0-9-]{2,40}$/.test(motivo)) return Response.json({ error: "inválido" }, { status: 400, headers: CORS });
+  const video = typeof b?.video === "string" && /^[A-Za-z0-9_-]{11}$/.test(b.video) ? b.video : null;
+  const onde = b?.onde === "sozinho" ? "sozinho" : "dentro-de-quadro";
+  const estados = String(b?.estados ?? "").replace(/[^0-9,-]/g, "").slice(0, 40);
+  const client = sb();
+  const { data } = await client.from("bi_config").select("valor").eq("chave", CHAVE_DIAG).maybeSingle();
+  let lista: unknown[] = [];
+  try { const v = JSON.parse(data?.valor ?? "[]"); if (Array.isArray(v)) lista = v; } catch { /* recomeça */ }
+  lista.unshift({ em: new Date().toISOString(), motivo, video, onde, estados, navegador: (req.headers.get("user-agent") ?? "").slice(0, 160) });
+  const agora = new Date().toISOString();
+  await client.from("bi_config").upsert({ chave: CHAVE_DIAG, valor: JSON.stringify(lista.slice(0, 30)), atualizado_em: agora }, { onConflict: "chave" });
+  return Response.json({ ok: true }, { headers: CORS });
+}
+
 export function OPTIONS() {
-  return new Response(null, { headers: { ...CORS, "Access-Control-Allow-Methods": "GET, OPTIONS" } });
+  return new Response(null, { headers: { ...CORS, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "content-type" } });
 }
