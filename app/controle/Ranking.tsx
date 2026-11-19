@@ -141,7 +141,7 @@ export function Ranking({ admin, porDia, superAdmin, filiais, tema: temaInicial 
         </div>
         <div id="secao-foto" role="tabpanel" aria-labelledby="aba-foto" hidden={aba !== "foto"} className="mt-4">
           <Foto key={grupo ?? "-"} grupo={config ? grupo : null} />
-          <div className="mt-4"><MinhaMusica /></div>
+          <div className="mt-4"><MinhaMusica key={grupo ?? "-"} grupo={config ? grupo : null} /></div>
         </div>
         {config && grupo && (
           <>

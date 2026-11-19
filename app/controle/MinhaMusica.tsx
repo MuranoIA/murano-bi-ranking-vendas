@@ -6,6 +6,8 @@ import {
   SEG_MAX_VENDEDOR, SEG_PADRAO_VENDEDOR, erroDoTrecho, fmtTempo, idDoYoutube, inicioDoLink, lerTempo,
   type MusicaVendedor,
 } from "@/lib/musicaVendedor";
+import { comGrupo, type Grupo } from "@/lib/grupo";
+import { slugCompleto } from "@/lib/slug";
 import { BOTAO_CONTORNO, BOTAO_PRIMARIO, CAMPO, CARTAO, CHIP, CHIP_DESLIGADO, CHIP_LIGADO, ROTULO, avisoDe } from "../../componentes/estilo";
 
 type Aviso = { ok: boolean; texto: string } | null;
@@ -19,7 +21,13 @@ const MAX_ORIGEM = 40 * 1024 * 1024;
 //    do admin) e só ele sobe, direto ao Storage por URL assinada;
 //  - link do YouTube: guardamos só o vídeo e o trecho; a TV toca com o player escondido (só o som).
 // De quem é a música o servidor decide pela sessão (/api/minha-musica).
-export function MinhaMusica() {
+// `grupo`: quem configura (admin ou supervisor) escolhe o consultor da filial, como na foto; null = só a própria.
+export function MinhaMusica({ grupo = null }: { grupo?: Grupo | null }) {
+  const admin = grupo !== null;
+  const [roster, setRoster] = useState<{ slug: string; nome: string }[]>([]);
+  const [alvo, setAlvo] = useState(""); // "" = a própria
+  // GET/DELETE levam o consultor na query; o POST leva no corpo. O grupo diz de qual filial o supervisor é.
+  const rota = (comSlug: boolean) => comGrupo("/api/minha-musica" + (comSlug && alvo ? `?slug=${encodeURIComponent(alvo)}` : ""), grupo);
   const [slug, setSlug] = useState<string | null | undefined>(undefined);
   const [musica, setMusica] = useState<MusicaVendedor | null>(null);
   const [origem, setOrigem] = useState<Origem>("arquivo");
@@ -35,11 +43,26 @@ export function MinhaMusica() {
   const audioRef = useRef<HTMLAudioElement>(null);
 
   useEffect(() => {
-    fetch("/api/minha-musica", { cache: "no-store" })
+    setAlvo("");
+    if (!admin) return;
+    // a mesma lista da foto: nome completo do ERP e RCA, de quem vendeu na filial
+    fetch(comGrupo("/api/ranking/consultores", grupo), { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { consultores: [] }))
+      .then((j) => setRoster((j.consultores ?? []).map((c: any) => ({
+        slug: slugCompleto(c.nome),
+        nome: c.nome + (c.rca != null ? ` · RCA ${c.rca}` : "") + (c.aparece === false ? " (escondido no ranking)" : ""),
+      }))))
+      .catch(() => setRoster([]));
+  }, [admin, grupo]);
+  useEffect(() => {
+    setAviso(null);
+    setMusica(null);
+    fetch(rota(true), { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : { slug: null, musica: null }))
       .then((j) => { setSlug(j.slug ?? null); setMusica(j.musica ?? null); })
       .catch(() => setSlug(null));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alvo]);
   useEffect(() => () => { if (previa) URL.revokeObjectURL(previa); }, [previa]);
 
   const ini = lerTempo(inicio), fi = lerTempo(fim);
@@ -83,14 +106,14 @@ export function MinhaMusica() {
       const corpo: Blob = trecho ? trecho.blob : file;
       const mime = trecho ? "audio/wav" : file.type || "";
       setEnviando("enviando");
-      const rAss = await fetch("/api/minha-musica", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acao: "assinar", mime }) });
+      const rAss = await fetch(rota(false), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ acao: "assinar", mime, slug: alvo || undefined }) });
       const jAss = await rAss.json().catch(() => ({}));
       if (!rAss.ok) throw new Error(jAss?.error ?? `Erro ${rAss.status}`);
       const rPut = await fetch(jAss.signedUrl, { method: "PUT", headers: { "content-type": mime || "application/octet-stream" }, body: corpo });
       if (!rPut.ok) throw new Error(`Falha ao enviar o arquivo (${rPut.status}). Tente de novo.`);
-      const rConf = await fetch("/api/minha-musica", {
+      const rConf = await fetch(rota(false), {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ acao: "confirmar", path: jAss.path, nome: file.name, cortado: !!trecho, inicio: ini, fim: fi }),
+        body: JSON.stringify({ acao: "confirmar", slug: alvo || undefined, path: jAss.path, nome: file.name, cortado: !!trecho, inicio: ini, fim: fi }),
       });
       const j = await rConf.json().catch(() => ({}));
       if (!rConf.ok) throw new Error(j?.error ?? `Erro ${rConf.status}`);
@@ -111,9 +134,9 @@ export function MinhaMusica() {
     setAviso(null);
     setEnviando("enviando");
     try {
-      const r = await fetch("/api/minha-musica", {
+      const r = await fetch(rota(false), {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ acao: "youtube", link, inicio: ini, fim: fi }),
+        body: JSON.stringify({ acao: "youtube", slug: alvo || undefined, link, inicio: ini, fim: fi }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error ?? `Erro ${r.status}`);
@@ -132,7 +155,7 @@ export function MinhaMusica() {
     setEnviando("enviando");
     setAviso(null);
     try {
-      const r = await fetch("/api/minha-musica", { method: "DELETE" });
+      const r = await fetch(rota(true), { method: "DELETE" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error ?? `Erro ${r.status}`);
       setMusica(null);
@@ -145,13 +168,34 @@ export function MinhaMusica() {
   }
 
   if (slug === undefined) return <section className={CARTAO + " text-[13px] text-v2-tinta-fraca"}>Carregando…</section>;
-  if (!slug) return null; // sem carteira de vendedor: a "Minha foto" já explica o que fazer
+  const seletor = admin && (
+    <label className="mt-3 block text-[13px] font-semibold">
+      Consultor
+      <select value={alvo} onChange={(e) => setAlvo(e.target.value)}
+        className="mt-1 block h-10 w-full max-w-xs rounded-lg bg-v2-superficie px-3 text-[13.5px] font-normal ring-1 ring-inset ring-v2-linha-forte">
+        <option value="">Eu mesmo</option>
+        {roster.map((c) => <option key={c.slug} value={c.slug}>{c.nome}</option>)}
+      </select>
+    </label>
+  );
+
+  if (!slug && !admin) return null; // sem carteira de vendedor: a "Minha foto" já explica o que fazer
+  if (!slug) {
+    return (
+      <section className={CARTAO}>
+        <h2 className="text-[18px] font-bold">Música do consultor</h2>
+        {seletor}
+        <p className="mt-2 text-[13.5px] leading-5 text-v2-tinta-fraca">Escolha acima o consultor da filial para colocar, trocar ou tirar a música dele.</p>
+      </section>
+    );
+  }
 
   return (
     <section className={CARTAO}>
-      <h2 className="text-[18px] font-bold">Minha música</h2>
+      <h2 className="text-[18px] font-bold">{alvo ? "Música do consultor" : "Minha música"}</h2>
+      {seletor}
       <p className="mt-1 max-w-2xl text-[13.5px] leading-5 text-v2-tinta-fraca">
-        Toca nas TVs quando <b>você</b> faz uma venda. Se você não escolher, toca a música da filial. Envie um MP3 ou MP4 ou cole um link do
+        Toca nas TVs quando <b>{alvo ? "esse consultor" : "você"}</b> faz uma venda. Sem música própria, toca a música da filial. Envie um MP3 ou MP4 ou cole um link do
         YouTube (do vídeo só sai o som), e marque o trecho: até <b>{SEG_MAX_VENDEDOR} segundos</b>.
       </p>
 
