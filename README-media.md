@@ -44,3 +44,23 @@ python -m http.server 8000
 Para ver a tela de parabéns, use o botão **"Parabéns por cliente"** no CRM (com
 uma venda de hoje). O desfile (`?desfile=1`) roda **sem som** de propósito — o
 som só entra na comemoração de venda nova e na meta batida.
+
+## Música própria do consultor (19/11/2026)
+
+Cada consultor pode escolher a música que toca **quando ele vende**, na aba
+**Minha foto e música** do `/controle` — do mesmo jeito que troca a própria foto.
+Sem música própria, toca a da filial (acima); sem ela, o som sintetizado.
+
+- **Arquivo MP3/MP4**: o trecho marcado (início e fim) é cortado no navegador
+  (`lib/musicaParabens.ts`) e sobe direto ao bucket `ranking-musica`
+  (`vendedor-<slug>-<ts>.wav`), por URL assinada (`/api/minha-musica`).
+- **Link do YouTube**: guarda só o id do vídeo e o trecho. Na TV, o player do
+  YouTube fica transparente e atrás da tela — só o som sai. Se em 6 s ele não
+  começar (vídeo que não deixa incorporar, rede da TV sem YouTube, autoplay
+  bloqueado), toca a música da filial.
+- O trecho tem de 3 a **30 segundos** (o tempo que a tela de parabéns fica na TV).
+- Fica em `bi_config`, uma chave por consultor: `musica_vendedor:<slug>` (o mesmo
+  slug da foto). Sem tabela nova, sem mudança na edge function: o painel lê a
+  lista na rota pública `/api/ranking/musicas-vendedores` a cada 60 s e procura
+  pelo nome completo do ERP e depois pelo 1º nome, como a foto.
+- Vale só na comemoração de **venda**; a de meta batida segue com a da filial.
